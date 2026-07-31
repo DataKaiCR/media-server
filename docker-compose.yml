@@ -1,207 +1,205 @@
-version: '2.15.1'
+# DataKai media stack — gruff
+#
+# Deliberate differences from the 2023 file:
+#   * NO spaces around "=" in env values. The old file had 11 such lines, so TZ
+#     was never set in ANY service and Jellyfin never received its PUID.
+#   * ONE /data mount shared by every *arr + the download client, so imports are
+#     hardlinks instead of full copies. Verified working on this btrfs volume.
+#   * Real VPN. The old file set VPN_ENABLED=yes on linuxserver/qbittorrent,
+#     which has no VPN support at all — those variables were silently ignored
+#     and torrent traffic went out over the raw WAN IP. Gluetun owns the
+#     network namespace here, so if the tunnel drops, qBittorrent loses network.
+#   * Prowlarr replaces Jackett (syncs indexers to every *arr automatically).
+#   * No "version:" key — removed in Compose v2.
+#   * Pinned image tags, healthchecks, and log rotation on every service.
+#
+# Run rootful: sudo /home/linuxbrew/.linuxbrew/bin/podman-compose up -d
+# (Homebrew podman-compose is NOT on sudo's PATH - absolute path required.)
+# Host bind-mount sources must be labeled container_file_t; SELinux is enforcing.
+# Rootless is not used because NVENC is unavailable to rootless podman on this
+# host (NVML "Insufficient Permissions" even with no-cgroups = true).
 
 networks:
-  default:
-    external: true
-    name: medianet
+  media:
     driver: bridge
 
+x-common: &common
+  restart: unless-stopped
+  environment: &env
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "America/Costa_Rica"
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
-  jellyfin: # open source media server
-    image: linuxserver/jellyfin:10.8.9-1-ls199
-    container_name: jellyfin
-    networks:
-      - default
-    ports: 
-      - 8096:8096/tcp
-      - 8920:8920/tcp
-      - 1900:1900/udp
-      - 7359:7359/udp
-    environment:
-      - PUID = 1000
-      - PGID = 1000
-      - TZ = America/Costa_Rica
-    volumes:
-      - M:\jellyfin\config:/config
-      - M:\jellyfin\cache:/cache
-      - M:\movies:/data/movies:rw # rw permissions to install plugins
-      - M:\tv:/data/tv:rw
-      - M:\music:/data/music:rw
-      - M:\videos:/data/videos:rw
-      - M:\books:/data/books:rw
-    restart: 'unless-stopped'
-  radarr: # movie collection manager
-    image: linuxserver/radarr:4.3.2.6857-ls160
-    container_name: radarr
-    networks:
-      - default
+
+  # ---------------------------------------------------------------- VPN ----
+  # Owns the network namespace for qBittorrent. Killswitch is inherent: if
+  # gluetun stops, the container sharing its namespace has no route out.
+  gluetun:
+    # OPT-IN. Not started by a plain "up -d" — requires --profile download.
+    # There is currently no VPN subscription, and starting qBittorrent without
+    # a working tunnel would send torrent traffic over the bare WAN IP, which
+    # is exactly the failure the 2023 file had without anyone noticing.
+    profiles: ["download"]
+    image: docker.io/qmcgaw/gluetun:v3.40.0
+    container_name: gluetun
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks: [media]
     ports:
-      - 7878:7878/tcp
+      - "8090:8080"        # qBittorrent WebUI (published HERE, not on qbt).
+                           # Host side is 8090, NOT 8080: a long-lived ssh
+                           # dev tunnel on this box already forwards 8080/8081.
+                           # Inside the netns qBittorrent is still on 8080.
+      - "6881:6881/tcp"    # torrent
+      - "6881:6881/udp"
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ = America/Costa_Rica
+      VPN_SERVICE_PROVIDER: "${VPN_PROVIDER}"
+      VPN_TYPE: "${VPN_TYPE:-wireguard}"
+      WIREGUARD_PRIVATE_KEY: "${WIREGUARD_PRIVATE_KEY}"
+      WIREGUARD_ADDRESSES: "${WIREGUARD_ADDRESSES}"
+      SERVER_COUNTRIES: "${VPN_COUNTRIES}"
+      # Only connect to servers that support port forwarding. On ProtonVPN
+      # those are the P2P servers, so this also guarantees a P2P-capable exit
+      # without hand-picking one. A non-P2P exit fails silently: the tunnel
+      # comes up healthy and torrents simply never move.
+      PORT_FORWARD_ONLY: "on"
+      VPN_PORT_FORWARDING: "on"
+      VPN_PORT_FORWARDING_STATUS_FILE: "/gluetun/forwarded_port"
+      # Proton's forwarded port is dynamic (NAT-PMP) and changes on reconnect.
+      # gluetun runs this each time it acquires one; the script pushes it into
+      # qBittorrent, which shares this container's network namespace.
+      VPN_PORT_FORWARDING_UP_COMMAND: "/bin/sh /gluetun/update-qbt-port.sh {{PORTS}}"
+      # Let LAN clients reach the WebUI through the tunnel container
+      FIREWALL_OUTBOUND_SUBNETS: "192.168.100.0/24"
+      TZ: "America/Costa_Rica"
     volumes:
-      - M:\radarr\config:/config
-      - M:\movies:/movies
-      - M:\downloads:/downloads
-    restart: unless-stopped
-    depends_on:
-      - jackett
-      - qbittorrent
-  sonarr: # tv shows collection manager
-    image: linuxserver/sonarr:3.0.9.1549-ls176
-    container_name: sonarr
-    networks:
-      - default
-    ports:
-      - 8989:8989/tcp
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ = America/Costa_Rica
-    volumes:
-      - M:\sonarr\config:/config
-      - M:\tv:/tv #optional
-      - M:\downloads:/downloads
-    restart: unless-stopped
-    depends_on:
-      - jackett
-      - qbittorrent
-  lidarr: # music collection manager
-    image: linuxserver/lidarr:1.0.2.2592-ls110
-    container_name: lidarr
-    networks:
-      - default
-    ports:
-      - 8686:8686/tcp
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ = America/Costa_Rica
-    volumes:
-      - M:\lidarr\config:/config
-      - M:\music:/music #optional
-      - M:\downloads:/downloads
-    restart: unless-stopped
-    depends_on:
-      - jackett
-      - qbittorrent
-  readarr: # books collection manager
-    image: linuxserver/readarr:develop
-    container_name: readarr
-    networks:
-      - default
-    ports:
-      - 8787:8787/tcp
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ = America/Costa_Rica
-    volumes:
-      - M:\readarr\config:/config
-      - M:\books:/books #optional
-      - M:\downloads:/downloads
-    restart: unless-stopped
-    depends_on:
-      - jackett
-      - qbittorrent
-  jackett: # proxy server
-    image: linuxserver/jackett:v0.20.3063-ls92
-    container_name: jackett
-    networks:
-      - default
-    ports:
-      - 9117:9117/tcp
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ = America/Costa_Rica
-      - AUTO_UPDATE=true #optional
-    volumes:
-      - M:\jackett\config:/config
-      - M:\downloads:/downloads
-    restart: unless-stopped
-  qbittorrent: # torrent manager
-    image: linuxserver/qbittorrent:latest
+      - ${APPDATA}/gluetun:/gluetun
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  qbittorrent:
+    # OPT-IN alongside gluetun. Cannot start without it: network_mode binds this
+    # container to gluetun's namespace, so no tunnel means no network at all.
+    profiles: ["download"]
+    image: lscr.io/linuxserver/qbittorrent:5.0.4
     container_name: qbittorrent
-    networks:
-      - default
-    ports:
-      - 8080:8080/tcp
-      - 8010:8010
-      # - 6881:6881/tcp
-      # - 6881:6881/udp
-      - 63407:63407/tcp # custom ports may be faster
-      - 63407:63407/udp # custom ports may be faster
+    # Shares gluetun's netns — this is the killswitch.
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
     environment:
-      - PUID=1000
-      - PGID=1000
-      - WEBUI_PORT=8080
-      - INCOMING_WEB_PORT=6881
-      - FILE__VPN_USERNAME =  ${VPN_USERNAME}
-      - FILE__VPN_PASSWORD =  ${VPN_PASSWORD}
-      - NAME_SERVERS=8.8.8.8, 8.8.4.4
-      - VPN_ENABLED=yes
-      - LAN_NETWORK=192.168.100.35
-      - TZ = America/Costa_Rica
+      <<: *env
+      WEBUI_PORT: "8080"
     volumes:
-      - M:\qbittorrent\config:/config
-      - M:\downloads:/downloads
+      - ${APPDATA}/qbittorrent:/config
+      - ${DATA}:/data           # single mount: /data/torrents + /data/media
     restart: unless-stopped
-# ====================================== OPTIONAL SERVICES =======================================
-  # plex: # alternate media server
-  #   image: plexinc/pms-docker
-  #   container_name: plex
-  #   restart: unless-stopped
-  #   hostname: BajuraFlix
-  #   environment:
-  #     - TZ = America/Costa_Rica
-  #     - PLEX_CLAIM=claim-REDACTED
-  #     #- ADVERTISE_IP = http://localhost:32400/
-  #   ports:
-  #     - 32400:32400/tcp
-  #     - 3005:3005/tcp
-  #     - 8324:8324/tcp
-  #     - 32469:32469/tcp
-  #     - 1900:1900/udp
-  #     - 32410:32410/udp
-  #     - 32412:32412/udp
-  #     - 32413:32413/udp
-  #     - 32414:32414/udp
-  #   volumes:
-  #     - M:\plex\config:/config
-  #     - M:\plex\transcode:/transcode
-  #     - M:\movies:/movies:ro
-  # pktriot: # reverse proxy
-  #   image: packetriot/pktriot:latest
-  #   container_name: pktriot
-  #   restart: unless-stopped
-  #   volumes:
-  #       - M:\plex\pktriot:/data
-  #       - M:\plex\www:/www:ro
-  # qbittorrentvpn: # qbittorrent alternative image
-  #   image: markusmcnugen/qbittorrentvpn:latest
-  #   container_name: qbittorrentvpn
-  #   privileged: true
-  #   environment:
-  #     - VPN_USERNAME =  ${VPN_USERNAME}
-  #     - VPN_PASSWORD =  ${VPN_PASSWORD}
-  #     - PUID=1000
-  #     - PGID=1000
-  #     - WEBUI_PORT=8080
-  #     - INCOMING_WEB_PORT=8999
-  #     - VPN_ENABLED=yes
-  #     - NAME_SERVERS=8.8.8.8, 8.8.4.4
-  #     - LAN_NETWORK=192.168.100.35/24
-  #     - TZ = America/Costa_Rica
-  #     # - UMASK=002
-  #   volumes:
-  #     - M:\qbittorrentvpn\config:/config
-  #     - M:\downloads:/downloads
-  #   ports:
-  #     - 8080:8080/tcp
-  #     - 8999:8999/tcp
-  #     - 8999:8999/udp
-  #   restart: unless-stopped
-# ======================================  / OPTIONAL SERVICES =======================================
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  # ------------------------------------------------------------ indexers ----
+  prowlarr:
+    <<: *common
+    image: lscr.io/linuxserver/prowlarr:1.30.2
+    container_name: prowlarr
+    networks: [media]
+    ports: ["9696:9696"]
+    volumes:
+      - ${APPDATA}/prowlarr:/config
+
+  # -------------------------------------------------------------- *arrs ----
+  radarr:
+    <<: *common
+    image: lscr.io/linuxserver/radarr:5.14.0
+    container_name: radarr
+    networks: [media]
+    ports: ["7878:7878"]
+    volumes:
+      - ${APPDATA}/radarr:/config
+      - ${DATA}:/data
+
+  sonarr:
+    <<: *common
+    image: lscr.io/linuxserver/sonarr:4.0.11
+    container_name: sonarr
+    networks: [media]
+    ports: ["8989:8989"]
+    volumes:
+      - ${APPDATA}/sonarr:/config
+      - ${DATA}:/data
+
+  bazarr:
+    <<: *common
+    image: lscr.io/linuxserver/bazarr:1.4.5
+    container_name: bazarr
+    networks: [media]
+    ports: ["6767:6767"]
+    volumes:
+      - ${APPDATA}/bazarr:/config
+      - ${DATA}:/data
+
+  # --------------------------------------------------------- media server ----
+  # CloudFlare challenge solver for public indexers that gate search behind an
+  # interstitial (1337x, EZTV). Prowlarr routes tagged indexers through it.
+  # Not part of the download half: it solves challenges, it does not fetch content.
+  flaresolverr:
+    <<: *common
+    image: ghcr.io/flaresolverr/flaresolverr:v3.3.21
+    container_name: flaresolverr
+    networks: [media]
+    # Chrome is unstable on podman's default 64M /dev/shm; the symptom is a
+    # generic 60s challenge-solve timeout, not an obvious memory error.
+    shm_size: "512mb"
+    environment:
+      <<: *env
+      LOG_LEVEL: "info"
+      TZ: "America/Costa_Rica"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  jellyfin:
+    <<: *common
+    image: lscr.io/linuxserver/jellyfin:10.10.3
+    container_name: jellyfin
+    networks: [media]
+    ports:
+      - "8096:8096"          # http
+      - "8920:8920"          # https
+      - "7359:7359/udp"      # client discovery
+    devices:
+      - nvidia.com/gpu=all   # NVENC on the 3080 Ti (CDI, rootful)
+    environment:
+      <<: *env
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,video,utility"
+    volumes:
+      - ${APPDATA}/jellyfin:/config
+      - ${DATA}/media:/data/media:ro          # read-only: Jellyfin never writes here
+      - ${TRANSCODE}:/config/transcodes       # scratch on NVMe, not the HDD
+
+  jellyseerr:
+    <<: *common
+    image: docker.io/fallenbagel/jellyseerr:2.1.0
+    container_name: jellyseerr
+    networks: [media]
+    ports: ["5055:5055"]
+    volumes:
+      - ${APPDATA}/jellyseerr:/app/config
