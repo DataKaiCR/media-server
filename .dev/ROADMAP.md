@@ -53,18 +53,49 @@ change language policy.
 
 ## Next
 
-### [ ] MS-4 — Librarian agent
+### [~] MS-4 — Digital Librarian
 
-Build a recurring report-first library audit covering:
+Build one report-first Librarian for audiovisual media, photos, books, and
+personal documents. Collection inventories, filenames, metadata, and reports are
+private runtime state. Originals remain authoritative; repair execution stays
+separate from analysis and always requires explicit approval.
 
-- redundant encodes and oversized-for-value files;
-- malformed or unsupported media layouts;
-- orphaned artwork and unmatched entries;
-- malformed, mislabeled, duplicated, out-of-runtime, wrong-cut, or probably
-  unsynchronized subtitles.
+#### [x] MS-4A — Librarian core
 
-Repairs require explicit approval, a backup, post-change verification, and
-rollback on failure.
+Deployed a read-only filesystem catalog with strict private TOML configuration,
+non-overlapping collection roots, symlink refusal, a single-job lock, shallow
+format checks, exact duplicate hashing, case-collision detection, photo-sidecar
+checks, and atomic mode-0600 JSON reports. Reports contain no proposed actions.
+The initial private baseline covered the primary photo and digital-book roots and
+verified that source size, timestamps, and inode metadata did not change.
+
+#### [ ] MS-4B — Audiovisual collections
+
+Audit redundant encodes, oversized files, malformed layouts, orphaned artwork,
+unmatched entries, and subtitle integrity/provenance without changing libraries.
+
+#### [ ] MS-4C — Photo collections
+
+Add EXIF/time-zone analysis, RAW/JPEG and Live Photo pairing, perceptual duplicate
+and burst grouping, quality signals, private-location controls, and local visual
+embeddings. Curation remains suggestion-only.
+
+#### [ ] MS-4D — Books and documents
+
+Add bibliographic identifiers and edition/format grouping, PDF text/OCR quality,
+EPUB structure, covers, series order, language, and optional adapters for book
+servers. Detect encryption without circumventing DRM. Physical books may exist
+as catalog-only records.
+
+#### [ ] MS-4E — Curation intelligence
+
+Generate unified private tags, collections, event/album suggestions, reading
+queues, and evidence-backed recommendations without exporting collection data.
+
+#### [ ] MS-4F — Repair executor
+
+Execute only an approved, hash-bound plan. Every repair is backup-first, atomic
+where possible, post-change verified, audited, and rolled back on failure.
 
 ### [ ] MS-5 — Semantic library search
 

@@ -1,0 +1,14 @@
+version = 1
+report_dir = "/srv/private-state/librarian/reports"
+
+[[collections]]
+id = "primary-photos"
+kind = "photos"
+root = "/srv/collections/photos"
+exclude_globs = [".thumbnails/**", "@eaDir/**"]
+
+[[collections]]
+id = "digital-books"
+kind = "books"
+root = "/srv/collections/books"
+exclude_globs = [".caltrash/**"]
