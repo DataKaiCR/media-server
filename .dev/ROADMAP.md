@@ -4,19 +4,24 @@ Status: `[ ]` planned · `[~]` in progress · `[x]` complete · `[!]` blocked
 
 ## Now
 
-### [~] MS-1 — Whisper transcription fallback
+### [x] MS-1 — Whisper transcription fallback
 
-Deploy local GPU transcription so subtitle coverage no longer depends entirely
-on external providers.
+Deployed `whisper-asr-webservice` v1.9.1 with NVIDIA CDI, `faster_whisper`, the
+`medium` model, and float16 CUDA inference. The API is internal-only, persists
+its model cache, and unloads model memory after an idle interval.
 
-- Run `whisper-asr-webservice` with NVIDIA CDI access.
-- Start with the `medium` model; measure speed, memory use, and transcript
-  quality before changing model size.
-- Integrate with Bazarr's `whisperai` provider below human subtitle providers.
-- Generate English subtitles from English audio and same-language subtitles from
-  other audio. Whisper's translation mode only outputs English; it cannot
-  directly produce Spanish subtitles from English audio.
-- Mark generated output clearly and never replace human subtitles silently.
+Bazarr's `whisperai` provider is last in the provider list and enabled only as an
+automated fallback when human providers do not reach the configured minimum
+score. Single-series fallback remains disabled to avoid accidental interactive
+bulk work. Whisper output is excluded from `ffsubsync`, remains eligible for
+Bazarr's human-subtitle upgrade search, and is identified by Bazarr history,
+file xattrs, and a private hash manifest. Human-provider replacement clears the
+generated xattrs.
+
+Validation covered a short English transcription, Spanish language detection,
+and one full-length Spanish-to-English subtitle. Output was UTF-8 SRT with
+positive, ordered, non-overlapping cues inside the media runtime. Whisper's
+translation mode only outputs English; English-to-Spanish remains MS-2.
 
 ### [ ] MS-2 — English to Latin American Spanish translation
 
