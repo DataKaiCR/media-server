@@ -19,7 +19,8 @@ language-aware movie requests, and English/Latin American Spanish subtitles.
 | Jellyseerr Latino | 5056 | Movie requests requiring Latin American Spanish audio |
 | Radarr | 7878 | Movies |
 | Sonarr | 8989 | TV |
-| Bazarr | 6767 | Subtitles |
+| Bazarr | 6767 | Subtitle search, fallback policy, and history |
+| Whisper ASR | internal | GPU transcription and speech translation fallback |
 | Prowlarr | 9696 | Indexer management |
 | FlareSolverr | internal | Supported challenge solving for Prowlarr |
 | Gluetun | profile only | VPN namespace and firewall |
@@ -40,6 +41,8 @@ access. Both services are opt-in through the Compose `download` profile.
 - Rootful Podman and a Compose implementation
 - SELinux labels that permit containers to access the configured bind mounts
 - NVIDIA Container Toolkit with a generated CDI specification for GPU playback
+  and transcription
+- Fast local storage for the persisted Whisper model cache
 - A VPN provider with WireGuard and port-forwarding support for the download
   profile
 
@@ -125,10 +128,25 @@ the title's original-language audio. Existing subtitles are not modified
 retroactively. Any manual repair should back up the sidecar, verify the result,
 and roll back failures.
 
-The roadmap adds local Whisper transcription as a fallback below human
-providers, followed by a separate English-to-Latin-American-Spanish translation
-stage. Generated files must remain identifiable and must never silently replace
-human subtitles.
+Whisper runs internally with the `faster_whisper` engine, the `medium` model,
+CUDA float16 inference, and an idle timeout that releases model memory. Bazarr
+uses it only as an automated fallback after human providers fail to meet the
+minimum score. The service has no published host port and receives 16 kHz mono
+audio extracted by Bazarr rather than direct media-library access.
+
+Whisper output is excluded from `ffsubsync` because its timestamps already come
+from the audio. Bazarr records the provider in history, and post-processing adds
+source/hash xattrs plus an append-only private manifest without modifying SRT
+content. A later human-provider replacement clears the generated markers.
+Bazarr's upgrade search may therefore replace generated output with a better
+human subtitle.
+
+Whisper can transcribe English audio and translate other audio **to English**;
+it cannot translate English into Spanish. The roadmap's next stage performs
+validated English-to-Latin-American-Spanish translation while preserving cue
+timings. Generated files must never silently replace human subtitles. See
+[docs/whisper-bazarr.md](docs/whisper-bazarr.md) for configuration, validation,
+and rollback details.
 
 ## Development
 

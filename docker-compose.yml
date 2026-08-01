@@ -137,6 +137,36 @@ services:
     volumes:
       - ${APPDATA}/bazarr:/config:Z
       - ${DATA}:/data
+      - ./scripts/mark-generated-subtitle.py:/opt/media-scripts/mark-generated-subtitle.py:ro,z
+
+  # Human subtitle providers remain primary. Bazarr calls this internal-only
+  # service only when its governed Whisper fallback is explicitly allowed.
+  whisper:
+    <<: *common
+    image: docker.io/onerahmet/openai-whisper-asr-webservice:v1.9.1-gpu
+    container_name: whisper
+    networks: [media]
+    expose: ["9000"]
+    devices:
+      - nvidia.com/gpu=all
+    environment:
+      <<: *env
+      ASR_ENGINE: "faster_whisper"
+      ASR_MODEL: "${WHISPER_MODEL:-medium}"
+      ASR_DEVICE: "cuda"
+      ASR_QUANTIZATION: "float16"
+      ASR_MODEL_PATH: "/models"
+      MODEL_IDLE_TIMEOUT: "${WHISPER_IDLE_TIMEOUT:-600}"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    volumes:
+      - ${WHISPER_CACHE}:/models:Z
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/openapi.json', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15m
 
   # --------------------------------------------------------- media server ----
   # CloudFlare challenge solver for public indexers that gate search behind an
