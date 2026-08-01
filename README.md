@@ -22,6 +22,7 @@ language-aware movie requests, and English/Latin American Spanish subtitles.
 | Bazarr | 6767 | Subtitle search, fallback policy, and history |
 | Whisper ASR | internal | GPU transcription and speech translation fallback |
 | Ollama | external | Private English-to-Latin-American-Spanish translation API |
+| Digital Librarian | local CLI | Report-only audits for media, photos, and books |
 | Prowlarr | 9696 | Indexer management |
 | FlareSolverr | internal | Supported challenge solving for Prowlarr |
 | Gluetun | profile only | VPN namespace and firewall |
@@ -154,6 +155,21 @@ Generated files must never silently replace human subtitles. See
 [docs/whisper-bazarr.md](docs/whisper-bazarr.md) and
 [docs/ollama-subtitle-translation.md](docs/ollama-subtitle-translation.md) for
 configuration, validation, and rollback details.
+
+## Digital Librarian
+
+The report-only Digital Librarian inventories private audiovisual, photo, book,
+and document collections without modifying originals. Its strict private TOML
+configuration defines disjoint collection roots and a report directory outside
+them. The initial core performs shallow format validation, exact duplicate
+hashing, filename collision and photo-sidecar checks, and atomic private JSON
+reporting with no proposed actions.
+
+Photo visual quality, EXIF curation, perceptual duplicates, bibliographic
+normalization, OCR, application adapters, and all repair execution remain
+separate roadmap stages. See
+[docs/digital-librarian.md](docs/digital-librarian.md) for safety invariants,
+configuration, report interpretation, and planned modules.
 
 ## Development
 

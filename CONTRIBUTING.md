@@ -3,8 +3,9 @@
 ## Public boundary
 
 Do not commit credentials, `.env` files, databases, backups, logs, media
-inventories, private hostnames, addresses, account names, or screenshots that
-contain them. Use placeholders in examples and report security issues privately.
+inventories, photo/book/document filenames or metadata, private hostnames,
+addresses, account names, or screenshots that contain them. Use placeholders in
+examples and report security issues privately.
 
 ## Development Setup
 

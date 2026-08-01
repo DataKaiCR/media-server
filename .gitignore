@@ -23,6 +23,8 @@ backups/
 *.log
 *.zip
 docker-compose.override.yml
+librarian.toml
+librarian-audit-*.json
 
 # DKOS continuity may contain private operational context
 .context/runtime/

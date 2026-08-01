@@ -7,8 +7,8 @@
   type = "foundation"
 
 [tech]
-  stack = ["podman", "compose", "jellyfin", "servarr", "whisper", "ollama", "nvidia-cdi"]
-  domain = ["media", "self-hosting", "subtitles", "automation"]
+  stack = ["podman", "compose", "jellyfin", "servarr", "whisper", "ollama", "digital-librarian", "nvidia-cdi"]
+  domain = ["media", "self-hosting", "subtitles", "photos", "books", "automation"]
 
 [dates]
   started = "2023-03-16"
@@ -19,7 +19,7 @@
   documentation = "README.md"
 
 [notes]
-  description = "Rootful Podman media stack with VPN-gated acquisition, hardware-accelerated playback, language-aware requests, and subtitle automation."
+  description = "Governed private-media foundation for playback, language-aware acquisition, subtitles, and report-first digital collection curation."
 
 [tmux]
   layout = ""
