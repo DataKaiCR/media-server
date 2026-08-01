@@ -1,14 +1,32 @@
 version = 1
 report_dir = "/srv/private-state/librarian/reports"
 
+[book_analysis]
+pdf_text_layer = true
+pdf_sample_pages = 12
+parser_timeout_seconds = 30
+max_parser_output_bytes = 1048576
+max_parser_memory_bytes = 1073741824
+
 [[collections]]
 id = "primary-photos"
 kind = "photos"
+role = "library"
 root = "/srv/collections/photos"
 exclude_globs = [".thumbnails/**", "@eaDir/**"]
 
 [[collections]]
 id = "digital-books"
 kind = "books"
+role = "library"
 root = "/srv/collections/books"
 exclude_globs = [".caltrash/**"]
+
+# Populate this directory through an explicit phone export. Auditing only records
+# stable source hashes; it never imports or deletes intake files.
+[[collections]]
+id = "phone-book-intake"
+kind = "books"
+role = "intake"
+root = "/srv/private-intake/books-from-phone"
+exclude_globs = []

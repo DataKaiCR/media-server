@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import datetime as dt
 import hashlib
 import json
@@ -11,10 +12,11 @@ import shutil
 import tempfile
 from typing import Any
 
+from .config import BookAnalysisConfig
 from .model import CollectionReport
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def fsync_directory(path: Path) -> None:
@@ -25,7 +27,11 @@ def fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def report_document(reports: list[CollectionReport], config_hash: str) -> dict[str, Any]:
+def report_document(
+    reports: list[CollectionReport],
+    config_hash: str,
+    book_analysis: BookAnalysisConfig | None = None,
+) -> dict[str, Any]:
     summaries = [report.summary() for report in reports]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -34,6 +40,12 @@ def report_document(reports: list[CollectionReport], config_hash: str) -> dict[s
         "config_sha256": config_hash,
         "capabilities": {
             "pdfinfo": {"available": shutil.which("pdfinfo") is not None},
+            "pdftotext": {"available": shutil.which("pdftotext") is not None},
+            "external_metadata_queries": {"available": False, "enabled": False},
+        },
+        "analysis": {
+            "books": asdict(book_analysis or BookAnalysisConfig()),
+            "extracted_document_text_persisted": False,
         },
         "summary": {
             "collection_count": len(reports),

@@ -165,11 +165,16 @@ them. The initial core performs shallow format validation, exact duplicate
 hashing, filename collision and photo-sidecar checks, and atomic private JSON
 reporting with no proposed actions.
 
-Photo visual quality, EXIF curation, perceptual duplicates, bibliographic
-normalization, OCR, application adapters, and all repair execution remain
-separate roadmap stages. See
+The books/documents module adds bounded PDF page and text-layer evidence, OCR
+recommendations without OCR execution, EPUB package and bibliographic checks,
+MOBI metadata, conservative edition/series grouping, cover evidence, and a
+hash-stable private phone intake role. Extracted document text is never persisted
+or sent over a network.
+
+Photo visual quality, EXIF curation, perceptual duplicates, application adapters,
+and all repair execution remain separate roadmap stages. See
 [docs/digital-librarian.md](docs/digital-librarian.md) for safety invariants,
-configuration, report interpretation, and planned modules.
+configuration, report interpretation, and intake workflow.
 
 ## Development
 
