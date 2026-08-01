@@ -118,6 +118,35 @@ per title, so an existing English-only movie must be upgraded to dual/Latino
 audio rather than added as a parallel copy. Reliable results also require an
 indexer with strong Latin American coverage.
 
+## Movie quality policy
+
+The everyday library targets 1080p WEB-DL or Blu-ray encodes. The Latino
+profile may accept 720p when Latin American audio is scarce, while remaining
+upgradeable to 1080p. CAM, telesync, telecine, workprint, screener, and SD
+sources are not acceptable for normal requests. Remux and 2160p releases are
+opt-in rather than defaults.
+
+Radarr quality definitions use runtime-scaled MB/min guardrails:
+
+| Quality | Minimum | Preferred | Maximum |
+| --- | ---: | ---: | ---: |
+| 720p HDTV, WEB, or Blu-ray | 8 | 22 | 45 |
+| 1080p HDTV or WEB | 12 | 35 | 70 |
+| 1080p Blu-ray encode | 15 | 45 | 90 |
+
+These limits include all streams. They prevent unusually small, visibly
+compressed releases and unexpectedly large downloads without treating file
+size as proof of quality. Grainy films may need more bitrate, while animation
+and efficient HEVC encodes may need less. Prefer WEB-DL over WEBRip, retain
+legitimate stereo for older films, and prefer 5.1 or dual audio when available.
+Do not replace a Latin American Spanish release with a higher-resolution
+English-only or Castilian release.
+
+Apply this policy to new downloads first. Existing files should be audited and
+upgraded selectively rather than triggering an unbounded library-wide search.
+Keep at least 15–20 percent of the data filesystem free and pause automatic
+acquisition before utilization reaches 85 percent.
+
 ## Subtitles
 
 Bazarr is pinned to 1.6.0 and requests English plus `ea` (`Spanish Latino`). Do
