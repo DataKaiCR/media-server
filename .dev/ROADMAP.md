@@ -74,11 +74,14 @@ verified that source size, timestamps, and inode metadata did not change.
 Audit redundant encodes, oversized files, malformed layouts, orphaned artwork,
 unmatched entries, and subtitle integrity/provenance without changing libraries.
 
-#### [ ] MS-4C — Photo collections
+#### [x] MS-4C — Photo collections
 
-Add EXIF/time-zone analysis, RAW/JPEG and Live Photo pairing, perceptual duplicate
-and burst grouping, quality signals, private-location controls, and local visual
-embeddings. Curation remains suggestion-only.
+Deployed local deep decoding, bounded EXIF capture-time/time-zone evidence,
+coordinate-free GPS presence controls, RAW/rendered and still/motion pairing,
+quality-review signals, dHash perceptual duplicate groups, bounded burst groups,
+and private numeric visual descriptors. Pixels are never persisted, originals
+remain authoritative, and every grouping or review order is suggestion-only.
+Semantic event/album embeddings remain part of MS-4E/MS-5.
 
 #### [x] MS-4D — Books and documents
 

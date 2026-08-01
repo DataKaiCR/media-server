@@ -9,9 +9,15 @@ import os
 from pathlib import Path, PurePosixPath
 
 from .books import add_bibliographic_groups, add_external_cover_evidence
-from .config import BookAnalysisConfig, CollectionConfig
+from .config import BookAnalysisConfig, CollectionConfig, PhotoAnalysisConfig
 from .formats import inspect_file
 from .model import CollectionReport, FileRecord, Finding
+from .photo_groups import (
+    add_burst_groups,
+    add_perceptual_duplicate_groups,
+    add_photo_metadata_findings,
+    add_photo_pairs,
+)
 
 
 SIDECAR_EXTENSIONS = {".aae", ".xmp"}
@@ -52,6 +58,7 @@ def sha256_stable(path: Path, record: FileRecord) -> str:
 def scan_entries(
     config: CollectionConfig,
     book_analysis: BookAnalysisConfig | None = None,
+    photo_analysis: PhotoAnalysisConfig | None = None,
 ) -> CollectionReport:
     report = CollectionReport(
         collection_id=config.collection_id,
@@ -95,7 +102,7 @@ def scan_entries(
                 continue
             extension = path.suffix.casefold()
             detected, metadata, findings = inspect_file(
-                path, extension, config.kind, book_analysis
+                path, extension, config.kind, book_analysis, photo_analysis
             )
             try:
                 post_stat = os.lstat(path)
@@ -233,14 +240,20 @@ def add_intake_hashes(report: CollectionReport, root: Path) -> None:
 def audit_collection(
     config: CollectionConfig,
     book_analysis: BookAnalysisConfig | None = None,
+    photo_analysis: PhotoAnalysisConfig | None = None,
 ) -> CollectionReport:
-    report = scan_entries(config, book_analysis)
+    photo_settings = photo_analysis or PhotoAnalysisConfig()
+    report = scan_entries(config, book_analysis, photo_settings)
     add_case_collisions(report)
     add_orphan_sidecars(report)
     add_external_cover_evidence(report)
     add_bibliographic_groups(report)
     add_intake_hashes(report, config.root)
     add_exact_duplicates(report, config.root)
+    add_photo_metadata_findings(report)
+    add_photo_pairs(report)
+    add_perceptual_duplicate_groups(report, photo_settings)
+    add_burst_groups(report, photo_settings)
     report.findings.sort(
         key=lambda finding: (
             finding.severity,

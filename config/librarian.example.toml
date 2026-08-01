@@ -8,6 +8,18 @@ parser_timeout_seconds = 30
 max_parser_output_bytes = 1048576
 max_parser_memory_bytes = 1073741824
 
+[photo_analysis]
+enabled = true
+location_detail = "presence"
+quality_signals = true
+perceptual_duplicates = true
+near_duplicate_distance = 4
+burst_window_seconds = 2
+burst_max_span_seconds = 15
+parser_timeout_seconds = 20
+max_parser_memory_bytes = 1073741824
+max_image_pixels = 50000000
+
 [[collections]]
 id = "primary-photos"
 kind = "photos"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,11 +13,11 @@ import shutil
 import tempfile
 from typing import Any
 
-from .config import BookAnalysisConfig
+from .config import BookAnalysisConfig, PhotoAnalysisConfig
 from .model import CollectionReport
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def fsync_directory(path: Path) -> None:
@@ -31,6 +32,7 @@ def report_document(
     reports: list[CollectionReport],
     config_hash: str,
     book_analysis: BookAnalysisConfig | None = None,
+    photo_analysis: PhotoAnalysisConfig | None = None,
 ) -> dict[str, Any]:
     summaries = [report.summary() for report in reports]
     return {
@@ -41,11 +43,15 @@ def report_document(
         "capabilities": {
             "pdfinfo": {"available": shutil.which("pdfinfo") is not None},
             "pdftotext": {"available": shutil.which("pdftotext") is not None},
+            "pillow": {"available": importlib.util.find_spec("PIL") is not None},
+            "imagemagick": {"available": shutil.which("magick") is not None},
             "external_metadata_queries": {"available": False, "enabled": False},
         },
         "analysis": {
             "books": asdict(book_analysis or BookAnalysisConfig()),
+            "photos": asdict(photo_analysis or PhotoAnalysisConfig()),
             "extracted_document_text_persisted": False,
+            "decoded_photo_pixels_persisted": False,
         },
         "summary": {
             "collection_count": len(reports),

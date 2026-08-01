@@ -37,10 +37,25 @@ class BookAnalysisConfig:
 
 
 @dataclass(frozen=True)
+class PhotoAnalysisConfig:
+    enabled: bool = True
+    location_detail: str = "presence"
+    quality_signals: bool = True
+    perceptual_duplicates: bool = True
+    near_duplicate_distance: int = 4
+    burst_window_seconds: int = 2
+    burst_max_span_seconds: int = 15
+    parser_timeout_seconds: int = 20
+    max_parser_memory_bytes: int = 1_073_741_824
+    max_image_pixels: int = 50_000_000
+
+
+@dataclass(frozen=True)
 class LibrarianConfig:
     report_dir: Path
     collections: tuple[CollectionConfig, ...]
     book_analysis: BookAnalysisConfig
+    photo_analysis: PhotoAnalysisConfig
 
 
 def _absolute_directory(value: object, field_name: str, must_exist: bool) -> Path:
@@ -65,11 +80,13 @@ def _is_within(path: Path, parent: Path) -> bool:
 
 
 def _bounded_integer(
-    table: dict[str, object], key: str, default: int, minimum: int, maximum: int
+    table: dict[str, object], section: str, key: str,
+    default: int, bounds: tuple[int, int],
 ) -> int:
+    minimum, maximum = bounds
     value = table.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
-        raise ConfigError(f"book_analysis.{key} must be between {minimum} and {maximum}")
+        raise ConfigError(f"{section}.{key} must be between {minimum} and {maximum}")
     return value
 
 
@@ -90,16 +107,68 @@ def _book_analysis(value: object) -> BookAnalysisConfig:
         raise ConfigError("book_analysis.pdf_text_layer must be true or false")
     return BookAnalysisConfig(
         pdf_text_layer=pdf_text_layer,
-        pdf_sample_pages=_bounded_integer(value, "pdf_sample_pages", 12, 1, 50),
+        pdf_sample_pages=_bounded_integer(
+            value, "book_analysis", "pdf_sample_pages", 12, (1, 50)
+        ),
         parser_timeout_seconds=_bounded_integer(
-            value, "parser_timeout_seconds", 30, 1, 120
+            value, "book_analysis", "parser_timeout_seconds", 30, (1, 120)
         ),
         max_parser_output_bytes=_bounded_integer(
-            value, "max_parser_output_bytes", 1_048_576, 65_536, 8_388_608
+            value, "book_analysis", "max_parser_output_bytes",
+            1_048_576, (65_536, 8_388_608),
         ),
         max_parser_memory_bytes=_bounded_integer(
-            value, "max_parser_memory_bytes", 1_073_741_824,
-            268_435_456, 4_294_967_296,
+            value, "book_analysis", "max_parser_memory_bytes",
+            1_073_741_824, (268_435_456, 4_294_967_296),
+        ),
+    )
+
+
+def _photo_analysis(value: object) -> PhotoAnalysisConfig:
+    if value is None:
+        return PhotoAnalysisConfig()
+    if not isinstance(value, dict):
+        raise ConfigError("photo_analysis must be a TOML table")
+    allowed = {
+        "enabled", "location_detail", "quality_signals",
+        "perceptual_duplicates", "near_duplicate_distance",
+        "burst_window_seconds", "burst_max_span_seconds", "parser_timeout_seconds",
+        "max_parser_memory_bytes", "max_image_pixels",
+    }
+    unknown = set(value) - allowed
+    if unknown:
+        raise ConfigError(f"unknown photo_analysis setting: {sorted(unknown)[0]}")
+    booleans: dict[str, bool] = {}
+    for key in ("enabled", "quality_signals", "perceptual_duplicates"):
+        setting = value.get(key, getattr(PhotoAnalysisConfig(), key))
+        if not isinstance(setting, bool):
+            raise ConfigError(f"photo_analysis.{key} must be true or false")
+        booleans[key] = setting
+    location = value.get("location_detail", "presence")
+    if location not in {"none", "presence"}:
+        raise ConfigError("photo_analysis.location_detail must be none or presence")
+    return PhotoAnalysisConfig(
+        **booleans,
+        location_detail=str(location),
+        near_duplicate_distance=_bounded_integer(
+            value, "photo_analysis", "near_duplicate_distance", 4, (0, 8)
+        ),
+        burst_window_seconds=_bounded_integer(
+            value, "photo_analysis", "burst_window_seconds", 2, (1, 10)
+        ),
+        burst_max_span_seconds=_bounded_integer(
+            value, "photo_analysis", "burst_max_span_seconds", 15, (2, 120)
+        ),
+        parser_timeout_seconds=_bounded_integer(
+            value, "photo_analysis", "parser_timeout_seconds", 20, (1, 120)
+        ),
+        max_parser_memory_bytes=_bounded_integer(
+            value, "photo_analysis", "max_parser_memory_bytes",
+            1_073_741_824, (268_435_456, 4_294_967_296),
+        ),
+        max_image_pixels=_bounded_integer(
+            value, "photo_analysis", "max_image_pixels",
+            50_000_000, (1_000_000, 200_000_000),
         ),
     )
 
@@ -114,6 +183,7 @@ def load_config(path: Path) -> LibrarianConfig:
         raise ConfigError("configuration version must be 1")
     report_dir = _absolute_directory(raw.get("report_dir"), "report_dir", False)
     book_analysis = _book_analysis(raw.get("book_analysis"))
+    photo_analysis = _photo_analysis(raw.get("photo_analysis"))
     rows = raw.get("collections")
     if not isinstance(rows, list) or not rows:
         raise ConfigError("at least one collection is required")
@@ -155,4 +225,6 @@ def load_config(path: Path) -> LibrarianConfig:
         for other in collections[index + 1:]:
             if _is_within(collection.root, other.root) or _is_within(other.root, collection.root):
                 raise ConfigError("collection roots must not overlap")
-    return LibrarianConfig(report_dir, tuple(collections), book_analysis)
+    return LibrarianConfig(
+        report_dir, tuple(collections), book_analysis, photo_analysis
+    )

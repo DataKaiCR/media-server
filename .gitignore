@@ -32,6 +32,9 @@ librarian-audit-*.json
 .context/checkpoints/
 .context/inbox/
 .context/feedback/
+.context/governance/
+.context/knowledge/
+.context/ubiweave/
 
 # Tooling and editor state
 .DS_Store

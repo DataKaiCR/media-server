@@ -4,13 +4,15 @@
 
 The Digital Librarian provides one governed, report-first inventory for private
 audiovisual, photo, book, and document collections. MS-4A supplies the read-only
-catalog and MS-4D adds bounded book/document evidence. Neither release has a
-move, rename, delete, metadata-write, import, OCR-write, or repair implementation.
+catalog, MS-4C adds private photo evidence, and MS-4D adds bounded book/document
+evidence. None has a move, rename, delete, metadata-write, import, OCR-write, or
+repair implementation.
 
 Collection roots, filenames, metadata, hashes, and reports are private runtime
 state. They must not appear in commits, issues, CI output, or public logs.
 Extracted PDF text is analyzed in bounded temporary output and is never persisted
-in a report or log.
+in a report or log. Decoded photo pixels are reduced locally to numeric quality
+signals and visual fingerprints; pixel buffers are never written to reports.
 
 ## Safety invariants
 
@@ -44,6 +46,18 @@ pdf_sample_pages = 12
 parser_timeout_seconds = 30
 max_parser_output_bytes = 1048576
 max_parser_memory_bytes = 1073741824
+
+[photo_analysis]
+enabled = true
+location_detail = "presence"
+quality_signals = true
+perceptual_duplicates = true
+near_duplicate_distance = 4
+burst_window_seconds = 2
+burst_max_span_seconds = 15
+parser_timeout_seconds = 20
+max_parser_memory_bytes = 1073741824
+max_image_pixels = 50000000
 
 [[collections]]
 id = "primary-photos"
@@ -99,6 +113,50 @@ Core findings include:
 - filenames that collide under case-insensitive filesystems;
 - orphaned XMP/AAE photo sidecars;
 - skipped symbolic links and files that race inspection or hashing.
+
+## Photo evidence
+
+### Decode and embedded metadata
+
+Supported raster images are decoded locally to a 64-by-64 grayscale working
+buffer. Pillow is preferred and uses JPEG decoder downscaling, a wall-clock
+alarm, a configurable pixel ceiling, `O_NOFOLLOW`, and first-frame-only handling.
+When Pillow is unavailable, ImageMagick runs with wall-clock, address-space,
+output, and core-dump limits. Decode failures become evidence without aborting
+the collection audit.
+
+The built-in bounded EXIF reader records camera/lens presence, orientation,
+original capture time, UTC-offset evidence, and whether GPS metadata exists.
+`location_detail = "presence"` reports only a boolean and never coordinates;
+`"none"` suppresses even that boolean. Missing or malformed capture times and
+UTC offsets are grouped for review. The Librarian does not guess a time zone or
+rewrite metadata.
+
+### Quality and local visual evidence
+
+Decoded pixels are reduced to luminance, contrast, entropy, edge strength, and
+extreme-dark/extreme-bright fractions. A `photo-quality-review` finding means
+only that severe bounded signals merit human inspection. Flat artwork, night
+photos, scans, or intentionally blank images can be legitimate. No image is
+classified for deletion.
+
+Each decoded image receives a local 64-bit difference hash and a 16-value spatial
+luminance descriptor. The report stores those numeric fingerprints, not decoded
+pixels. Candidate fingerprints within the configured Hamming distance and a
+compatible aspect ratio form conservative perceptual-duplicate groups. Exact
+content duplicates remain separate hash evidence, and automatic deletion is
+always false.
+
+### Relationships and bursts
+
+Same-directory, same-stem RAW/rendered and still/motion assets are reported as
+pairs while preserving every component as authoritative. RAW files without a
+same-stem rendered companion are informational, not errors.
+
+Capture-time runs with at least three images can form possible burst groups. Both
+the maximum consecutive gap and total span are bounded. Related paths are ordered
+for review using edge-strength and entropy signals, but automatic representative
+selection is false.
 
 ## Book and document evidence
 
@@ -191,16 +249,20 @@ A finding is not permission to repair. In particular:
 - an OCR recommendation may reflect intentionally sparse pages;
 - an unsupported extension means the analyzer lacks policy, not that the file
   has no value;
-- a clean shallow photo report does not prove visual quality or complete EXIF.
+- a perceptual group is a review candidate, not proof of interchangeable images;
+- a quality signal can reflect an intentional artistic or documentary choice;
+- missing UTC offsets cannot be repaired safely without external context.
 
 The private report is evidence for future approval plans. MS-4F will require a
 plan bound to source hashes before any mutation is possible.
 
 ## Optional tools and network boundary
 
-`pdfinfo` and `pdftotext` from Poppler are optional and their availability is
-recorded in each report. Without them, shallow PDF evidence remains available,
-but page metadata and text-layer quality are absent. The implementation has no
+`pdfinfo` and `pdftotext` from Poppler, Pillow, and ImageMagick are optional and
+their availability is recorded in each report. Pillow is the preferred photo
+decoder and ImageMagick is the bounded fallback. Without a local decoder,
+shallow dimensions and EXIF evidence remain available but quality and visual
+fingerprints are absent. The implementation has no
 online bibliography client. Any future metadata adapter must be opt-in, disclose
 identifiers only, never upload document content, and record its provenance.
 
@@ -208,8 +270,8 @@ identifiers only, never upload document content, and record its provenance.
 
 - **Audiovisual:** container/stream integrity, duplicate encodes, subtitle timing
   and provenance, orphaned artwork, and application adapters.
-- **Photos:** deep decoding, EXIF/time-zone checks, RAW/JPEG and Live Photo
-  pairing, perceptual duplicates, burst selection, events, and local embeddings.
+- **Photos:** event/album suggestions and optional semantic embeddings beyond
+  the deployed local visual fingerprints.
 - **Curation:** physical-book catalog records, optional private application
   adapters, reading queues, event/album suggestions, and evidence-backed tags.
 - **Repair executor:** backup-first, hash-bound, explicitly approved, verified,

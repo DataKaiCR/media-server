@@ -6,12 +6,8 @@ from pathlib import Path
 import shutil
 import statistics
 
-from .book_common import (
-    BoundedProcessResult,
-    bibliographic_evidence,
-    clean_metadata,
-    run_bounded,
-)
+from .book_common import bibliographic_evidence, clean_metadata
+from .bounded import BoundedProcessResult, run_bounded
 from .config import BookAnalysisConfig
 from .model import Finding
 
