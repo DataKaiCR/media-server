@@ -1,0 +1,57 @@
+# Project Metadata
+
+[project]
+  name = "media-server"
+  id = "media-server"
+  status = "active"
+  type = "foundation"
+
+[tech]
+  stack = ["podman", "compose", "jellyfin", "servarr", "nvidia-cdi"]
+  domain = ["media", "self-hosting", "subtitles", "automation"]
+
+[dates]
+  started = "2023-03-16"
+  completed = ""
+
+[links]
+  repository = "https://github.com/DataKaiCR/media-server"
+  documentation = "README.md"
+
+[notes]
+  description = "Rootful Podman media stack with VPN-gated acquisition, hardware-accelerated playback, language-aware requests, and subtitle automation."
+
+[tmux]
+  layout = ""
+
+[context]
+  aws_profile = ""
+  azure_subscription = ""
+  gcloud_project = ""
+  databricks_profile = ""
+  snowflake_account = ""
+  git_identity = ""
+
+[dev]
+  roadmap = ".dev/ROADMAP.md"
+
+[consultant]
+  ownership = "datakai"
+  client_name = ""
+  client_type = ""
+  partner = ""
+  my_role = "owner"
+  deliverable_type = ""
+  license_model = "open-source"
+  billable = false
+  rate_type = ""
+
+[datakai]
+  visibility = "public"
+  scriptorium_project = ""
+  conduit_graph = ""
+  dkos_version = "1.0"
+  product_category = "foundation"
+  revenue_model = "internal"
+  maturity = "production"
+  protocols = ["semantic-self-containment", "no-dry-runs"]
