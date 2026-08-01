@@ -22,6 +22,7 @@ the download profile without a verified VPN configuration.
 
 ```bash
 sudo /path/to/podman-compose config
+python -m unittest discover -s tests -v
 
 dkos check-hooks --strict --no-codex-drift
 git diff --check

@@ -29,6 +29,7 @@ docker-compose.override.yml
 .context/sessions/
 .context/checkpoints/
 .context/inbox/
+.context/feedback/
 
 # Tooling and editor state
 .DS_Store
