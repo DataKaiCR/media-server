@@ -21,6 +21,7 @@ language-aware movie requests, and English/Latin American Spanish subtitles.
 | Sonarr | 8989 | TV |
 | Bazarr | 6767 | Subtitle search, fallback policy, and history |
 | Whisper ASR | internal | GPU transcription and speech translation fallback |
+| Ollama | external | Private English-to-Latin-American-Spanish translation API |
 | Prowlarr | 9696 | Indexer management |
 | FlareSolverr | internal | Supported challenge solving for Prowlarr |
 | Gluetun | profile only | VPN namespace and firewall |
@@ -42,7 +43,7 @@ access. Both services are opt-in through the Compose `download` profile.
 - SELinux labels that permit containers to access the configured bind mounts
 - NVIDIA Container Toolkit with a generated CDI specification for GPU playback
   and transcription
-- Fast local storage for the persisted Whisper model cache
+- Fast local storage for persisted Whisper and Ollama model caches
 - A VPN provider with WireGuard and port-forwarding support for the download
   profile
 
@@ -142,11 +143,17 @@ Bazarr's upgrade search may therefore replace generated output with a better
 human subtitle.
 
 Whisper can transcribe English audio and translate other audio **to English**;
-it cannot translate English into Spanish. The roadmap's next stage performs
-validated English-to-Latin-American-Spanish translation while preserving cue
-timings. Generated files must never silently replace human subtitles. See
-[docs/whisper-bazarr.md](docs/whisper-bazarr.md) for configuration, validation,
-and rollback details.
+it cannot translate English into Spanish. A separate Ollama pipeline translates
+a validated English SRT into neutral Latin American Spanish while preserving cue
+identifiers and timestamps. Translation is serialized against Whisper, validated
+before an atomic publish, and recorded with model/prompt provenance. It refuses
+to replace human or unmarked subtitles, and its generated filename does not
+satisfy Bazarr's human `ea` target.
+
+Generated files must never silently replace human subtitles. See
+[docs/whisper-bazarr.md](docs/whisper-bazarr.md) and
+[docs/ollama-subtitle-translation.md](docs/ollama-subtitle-translation.md) for
+configuration, validation, and rollback details.
 
 ## Development
 

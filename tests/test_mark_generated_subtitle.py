@@ -58,9 +58,16 @@ class GeneratedSubtitleMarkerTest(unittest.TestCase):
             self.assertEqual(records[0]["sha256"], digest)
             self.assertEqual(subtitle.read_bytes(), content)
 
+            os.setxattr(subtitle, "user.media_server.translation_model", b"model")
+            os.setxattr(subtitle, "user.media_server.target_language", b"es-419")
             self.run_marker("opensubtitlescom", subtitle, manifest)
-            with self.assertRaises(OSError):
-                os.getxattr(subtitle, "user.media_server.generated")
+            for name in [
+                "user.media_server.generated",
+                "user.media_server.translation_model",
+                "user.media_server.target_language",
+            ]:
+                with self.assertRaises(OSError):
+                    os.getxattr(subtitle, name)
             self.assertEqual(subtitle.read_bytes(), content)
             self.assertEqual(len(manifest.read_text().splitlines()), 1)
 

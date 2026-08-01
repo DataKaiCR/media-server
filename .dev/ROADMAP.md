@@ -23,18 +23,26 @@ and one full-length Spanish-to-English subtitle. Output was UTF-8 SRT with
 positive, ordered, non-overlapping cues inside the media runtime. Whisper's
 translation mode only outputs English; English-to-Spanish remains MS-2.
 
-### [ ] MS-2 — English to Latin American Spanish translation
+### [x] MS-2 — English to Latin American Spanish translation
 
-Translate a validated timed English SRT while preserving cue boundaries and
-timing.
+Deployed a validated translation pipeline through the existing Ollama service
+using `translategemma:12b`. It preserves cue identifiers and timestamp lines,
+uses bounded chunks with neighboring context, protects outer formatting and
+proper names, and instructs the model to produce neutral Latin American Spanish
+without Castilian second-person plural wording.
 
-- Parse and validate SRT before translation.
-- Chunk with overlap/context suitable for feature-length content.
-- Instruct the model to use neutral Latin American Spanish and avoid Castilian
-  vocabulary and `vosotros`.
-- Validate cue count, timestamps, encoding, runtime bounds, and text completeness.
-- Run translation and transcription sequentially to avoid GPU contention.
-- Back up any destination, publish atomically, and roll back failed validation.
+Strict input/output checks reject malformed UTF-8 SRT, duplicate or regressing
+cues, overlaps, runtime violations, non-English sources, cue drift, missing text,
+truncation, suspiciously untranslated output, changed formatting, and protected
+name loss. Deterministic retries have a fixed budget.
+
+The wrapper serializes translation against Bazarr and Whisper GPU work. Output is
+staged and validated beside its destination, marked with source/model/prompt
+provenance, and atomically published with a private hash manifest. Repair of an
+existing generated translation is backup-first and rolls back publication
+failures. Human and unmarked subtitles are never replacement targets. Generated
+Spanish remains visibly labeled in Jellyfin while Bazarr continues searching for
+a human `ea` subtitle.
 
 ### [x] MS-3 — OpenSubtitles.com coverage
 

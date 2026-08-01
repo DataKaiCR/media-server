@@ -7,7 +7,7 @@
   type = "foundation"
 
 [tech]
-  stack = ["podman", "compose", "jellyfin", "servarr", "whisper", "nvidia-cdi"]
+  stack = ["podman", "compose", "jellyfin", "servarr", "whisper", "ollama", "nvidia-cdi"]
   domain = ["media", "self-hosting", "subtitles", "automation"]
 
 [dates]

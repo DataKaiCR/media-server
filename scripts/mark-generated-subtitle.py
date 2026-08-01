@@ -16,9 +16,16 @@ import json
 import os
 from pathlib import Path
 
-XATTRS = {
+WHISPER_XATTRS = {
     "user.media_server.generated": b"true",
     "user.media_server.subtitle_source": b"whisperai",
+}
+GENERATED_XATTRS = {
+    *WHISPER_XATTRS,
+    "user.media_server.subtitle_sha256",
+    "user.media_server.source_sha256",
+    "user.media_server.translation_model",
+    "user.media_server.target_language",
 }
 
 
@@ -31,20 +38,16 @@ def sha256(path: Path) -> str:
 
 
 def clear_generated_markers(path: Path) -> None:
-    for name in XATTRS:
+    for name in GENERATED_XATTRS:
         try:
             os.removexattr(path, name)
         except OSError:
             pass
-    try:
-        os.removexattr(path, "user.media_server.subtitle_sha256")
-    except OSError:
-        pass
 
 
 def mark_generated(path: Path, manifest: Path, score: str) -> None:
     digest = sha256(path)
-    for name, value in XATTRS.items():
+    for name, value in WHISPER_XATTRS.items():
         os.setxattr(path, name, value)
     os.setxattr(path, "user.media_server.subtitle_sha256", digest.encode("ascii"))
 
