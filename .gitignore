@@ -1,2 +1,40 @@
+# Local configuration and credentials
 .env
-docs/*.bak-*
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.credentials*
+.secrets/
+
+# Service state and secret-bearing backups
+appdata/
+backup/
+backups/
+*.bak
+*.bak-*
+*.backup
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.log
+*.zip
+docker-compose.override.yml
+
+# DKOS continuity may contain private operational context
+.context/runtime/
+.context/sessions/
+.context/checkpoints/
+.context/inbox/
+
+# Tooling and editor state
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/

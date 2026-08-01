@@ -1,0 +1,5 @@
+[watch]
+enabled = true
+intensity = "full"
+debounce_ms = 1000
+ignore_patterns = ["__pycache__", ".git", "node_modules", ".venv", "*.pyc", ".context", "logs", "static", "*.log", "*.json"]
