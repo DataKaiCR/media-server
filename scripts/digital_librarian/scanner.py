@@ -8,7 +8,8 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 
-from .config import CollectionConfig
+from .books import add_bibliographic_groups, add_external_cover_evidence
+from .config import BookAnalysisConfig, CollectionConfig
 from .formats import inspect_file
 from .model import CollectionReport, FileRecord, Finding
 
@@ -48,8 +49,16 @@ def sha256_stable(path: Path, record: FileRecord) -> str:
     return digest.hexdigest()
 
 
-def scan_entries(config: CollectionConfig) -> CollectionReport:
-    report = CollectionReport(config.collection_id, config.kind, str(config.root))
+def scan_entries(
+    config: CollectionConfig,
+    book_analysis: BookAnalysisConfig | None = None,
+) -> CollectionReport:
+    report = CollectionReport(
+        collection_id=config.collection_id,
+        kind=config.kind,
+        role=config.role,
+        root=str(config.root),
+    )
     for directory, dirnames, filenames in os.walk(config.root, topdown=True, followlinks=False):
         current = Path(directory)
         kept_dirs: list[str] = []
@@ -85,7 +94,9 @@ def scan_entries(config: CollectionConfig) -> CollectionReport:
             if not path.is_file():
                 continue
             extension = path.suffix.casefold()
-            detected, metadata, findings = inspect_file(path, extension, config.kind)
+            detected, metadata, findings = inspect_file(
+                path, extension, config.kind, book_analysis
+            )
             try:
                 post_stat = os.lstat(path)
                 if (file_stat.st_ino, file_stat.st_size, file_stat.st_mtime_ns) != (
@@ -169,7 +180,9 @@ def add_exact_duplicates(report: CollectionReport, root: Path) -> None:
         for index in indexes:
             record = report.files[index]
             try:
-                digest = sha256_stable(root / record.relative_path, record)
+                digest = record.sha256 or sha256_stable(
+                    root / record.relative_path, record
+                )
             except OSError:
                 report.findings.append(
                     Finding(
@@ -197,10 +210,36 @@ def add_exact_duplicates(report: CollectionReport, root: Path) -> None:
             )
 
 
-def audit_collection(config: CollectionConfig) -> CollectionReport:
-    report = scan_entries(config)
+def add_intake_hashes(report: CollectionReport, root: Path) -> None:
+    if report.role != "intake":
+        return
+    for index, record in enumerate(report.files):
+        try:
+            digest = sha256_stable(root / record.relative_path, record)
+        except OSError:
+            report.findings.append(
+                Finding(
+                    "intake-hash-failed", "error",
+                    "Intake file changed or became unreadable during hashing",
+                    relative_path=record.relative_path,
+                )
+            )
+            continue
+        metadata = dict(record.metadata)
+        metadata["intake_status"] = "awaiting-review"
+        report.files[index] = replace(record, sha256=digest, metadata=metadata)
+
+
+def audit_collection(
+    config: CollectionConfig,
+    book_analysis: BookAnalysisConfig | None = None,
+) -> CollectionReport:
+    report = scan_entries(config, book_analysis)
     add_case_collisions(report)
     add_orphan_sidecars(report)
+    add_external_cover_evidence(report)
+    add_bibliographic_groups(report)
+    add_intake_hashes(report, config.root)
     add_exact_duplicates(report, config.root)
     report.findings.sort(
         key=lambda finding: (

@@ -1,13 +1,13 @@
-"""Dependency-free format identification and shallow integrity checks."""
+"""Format identification plus collection-specific integrity checks."""
 
 from __future__ import annotations
 
 from pathlib import Path
-import shutil
 import struct
-import subprocess
 import zipfile
 
+from .books import analyze_book
+from .config import BookAnalysisConfig
 from .model import Finding
 
 
@@ -27,6 +27,7 @@ AV_EXTENSIONS = {
     ".ogg", ".srt", ".vtt", ".wav", ".webm",
 }
 EXPECTED_FORMATS = {
+    ".azw3": {"mobi"},
     ".bmp": {"bmp"},
     ".cbr": {"rar"},
     ".cbz": {"zip"},
@@ -154,31 +155,12 @@ def inspect_zip(path: Path, extension: str) -> tuple[str, dict[str, object], lis
         return "zip", {}, [Finding("invalid-archive", "error", "Archive central directory is unreadable")]
 
 
-def inspect_pdf_with_poppler(path: Path) -> Finding | None:
-    executable = shutil.which("pdfinfo")
-    if executable is None:
-        return None
-    try:
-        result = subprocess.run(
-            [executable, str(path)],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return Finding("pdf-validation-incomplete", "warning", "PDF parser could not complete validation")
-    if result.returncode == 0:
-        return None
-    error = result.stderr.casefold()
-    if "password" in error or "encrypted" in error:
-        return Finding("pdf-encrypted", "info", "PDF requires a password; no circumvention is attempted")
-    return Finding("pdf-parse-failed", "error", "Independent PDF parser rejected the document")
-
-
-def inspect_file(path: Path, extension: str, kind: str) -> tuple[str | None, dict[str, object], list[Finding]]:
+def inspect_file(
+    path: Path,
+    extension: str,
+    kind: str,
+    book_analysis: BookAnalysisConfig | None = None,
+) -> tuple[str | None, dict[str, object], list[Finding]]:
     findings: list[Finding] = []
     metadata: dict[str, object] = {}
     try:
@@ -201,9 +183,6 @@ def inspect_file(path: Path, extension: str, kind: str) -> tuple[str | None, dic
         if b"%%EOF" not in tail:
             findings.append(Finding("pdf-missing-eof", "error", "PDF has no terminal EOF marker"))
         metadata["encrypted_hint"] = b"/Encrypt" in header or b"/Encrypt" in tail
-        pdf_finding = inspect_pdf_with_poppler(path)
-        if pdf_finding is not None:
-            findings.append(pdf_finding)
     dimensions = image_dimensions(header, detected)
     if dimensions:
         metadata.update({"width": dimensions[0], "height": dimensions[1]})
@@ -231,4 +210,10 @@ def inspect_file(path: Path, extension: str, kind: str) -> tuple[str | None, dic
                 evidence={"extension": extension or "<none>"},
             )
         )
+    if kind == "books":
+        book_metadata, book_findings = analyze_book(
+            path, extension, detected, book_analysis or BookAnalysisConfig()
+        )
+        metadata.update(book_metadata)
+        findings.extend(book_findings)
     return detected, metadata, findings

@@ -80,12 +80,15 @@ Add EXIF/time-zone analysis, RAW/JPEG and Live Photo pairing, perceptual duplica
 and burst grouping, quality signals, private-location controls, and local visual
 embeddings. Curation remains suggestion-only.
 
-#### [ ] MS-4D — Books and documents
+#### [x] MS-4D — Books and documents
 
-Add bibliographic identifiers and edition/format grouping, PDF text/OCR quality,
-EPUB structure, covers, series order, language, and optional adapters for book
-servers. Detect encryption without circumventing DRM. Physical books may exist
-as catalog-only records.
+Deployed bounded PDF page, metadata, encryption, and sampled text-layer analysis
+with evidence-only OCR recommendations that never persist extracted text. Added
+EPUB package, cover, language, ISBN, series, and volume checks; bounded MOBI/AZW3
+metadata; conservative edition/work/series groups that preserve every format;
+and a hash-stable, no-import phone intake role. No online metadata query or DRM
+circumvention exists. Physical catalog records and optional book-server adapters
+remain candidates for MS-4E.
 
 #### [ ] MS-4E — Curation intelligence
 

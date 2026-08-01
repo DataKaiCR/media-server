@@ -37,6 +37,7 @@ class FileRecord:
 class CollectionReport:
     collection_id: str
     kind: str
+    role: str
     root: str
     files: list[FileRecord] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
@@ -50,6 +51,7 @@ class CollectionReport:
         return {
             "collection_id": self.collection_id,
             "kind": self.kind,
+            "role": self.role,
             "file_count": len(self.files),
             "total_bytes": sum(record.size for record in self.files),
             "finding_count": len(self.findings),
@@ -61,6 +63,7 @@ class CollectionReport:
         return {
             "collection_id": self.collection_id,
             "kind": self.kind,
+            "role": self.role,
             "root": self.root,
             "summary": self.summary(),
             "files": [record.to_dict() for record in self.files],

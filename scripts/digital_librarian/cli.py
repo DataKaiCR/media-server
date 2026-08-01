@@ -42,8 +42,11 @@ def run(config_path: Path) -> dict[str, object]:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise AuditAlreadyRunning("another Librarian audit is running") from error
-        reports = [audit_collection(collection) for collection in config.collections]
-        document = report_document(reports, config_hash)
+        reports = [
+            audit_collection(collection, config.book_analysis)
+            for collection in config.collections
+        ]
+        document = report_document(reports, config_hash, config.book_analysis)
         destination, digest = publish_report(config.report_dir, document)
         fcntl.flock(lock, fcntl.LOCK_UN)
     return {
