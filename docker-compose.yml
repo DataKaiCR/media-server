@@ -1,23 +1,14 @@
-# DataKai media stack — gruff
+# DataKai media stack
 #
-# Deliberate differences from the 2023 file:
-#   * NO spaces around "=" in env values. The old file had 11 such lines, so TZ
-#     was never set in ANY service and Jellyfin never received its PUID.
-#   * ONE /data mount shared by every *arr + the download client, so imports are
-#     hardlinks instead of full copies. Verified working on this btrfs volume.
-#   * Real VPN. The old file set VPN_ENABLED=yes on linuxserver/qbittorrent,
-#     which has no VPN support at all — those variables were silently ignored
-#     and torrent traffic went out over the raw WAN IP. Gluetun owns the
-#     network namespace here, so if the tunnel drops, qBittorrent loses network.
-#   * Prowlarr replaces Jackett (syncs indexers to every *arr automatically).
-#   * No "version:" key — removed in Compose v2.
-#   * Pinned image tags, healthchecks, and log rotation on every service.
+# Design invariants:
+#   * Every downloader and *arr service shares one /data mount so imports can
+#     use hardlinks instead of full copies.
+#   * qBittorrent shares Gluetun's network namespace. No VPN means no network.
+#   * Images are pinned and logs are rotated.
+#   * The stack is designed for rootful Podman with SELinux enforcing and an
+#     NVIDIA CDI device available to Jellyfin.
 #
-# Run rootful: sudo /home/linuxbrew/.linuxbrew/bin/podman-compose up -d
-# (Homebrew podman-compose is NOT on sudo's PATH - absolute path required.)
-# Host bind-mount sources must be labeled container_file_t; SELinux is enforcing.
-# Rootless is not used because NVENC is unavailable to rootless podman on this
-# host (NVML "Insufficient Permissions" even with no-cgroups = true).
+# Copy .env.example to .env before running Compose. Never commit .env.
 
 networks:
   media:
@@ -26,9 +17,9 @@ networks:
 x-common: &common
   restart: unless-stopped
   environment: &env
-    PUID: "1000"
-    PGID: "1000"
-    TZ: "America/Costa_Rica"
+    PUID: "${PUID:-1000}"
+    PGID: "${PGID:-1000}"
+    TZ: "${TZ:-UTC}"
   logging:
     driver: json-file
     options:
@@ -42,9 +33,6 @@ services:
   # gluetun stops, the container sharing its namespace has no route out.
   gluetun:
     # OPT-IN. Not started by a plain "up -d" — requires --profile download.
-    # There is currently no VPN subscription, and starting qBittorrent without
-    # a working tunnel would send torrent traffic over the bare WAN IP, which
-    # is exactly the failure the 2023 file had without anyone noticing.
     profiles: ["download"]
     image: docker.io/qmcgaw/gluetun:v3.40.0
     container_name: gluetun
@@ -53,12 +41,9 @@ services:
       - /dev/net/tun:/dev/net/tun
     networks: [media]
     ports:
-      - "8090:8080"        # qBittorrent WebUI (published HERE, not on qbt).
-                           # Host side is 8090, NOT 8080: a long-lived ssh
-                           # dev tunnel on this box already forwards 8080/8081.
-                           # Inside the netns qBittorrent is still on 8080.
-      - "6881:6881/tcp"    # torrent
-      - "6881:6881/udp"
+      - "${QBITTORRENT_WEBUI_PORT:-8090}:8080" # published here, not on qBittorrent
+      - "${TORRENT_PORT:-6881}:6881/tcp"
+      - "${TORRENT_PORT:-6881}:6881/udp"
     environment:
       VPN_SERVICE_PROVIDER: "${VPN_PROVIDER}"
       VPN_TYPE: "${VPN_TYPE:-wireguard}"
@@ -76,9 +61,9 @@ services:
       # gluetun runs this each time it acquires one; the script pushes it into
       # qBittorrent, which shares this container's network namespace.
       VPN_PORT_FORWARDING_UP_COMMAND: "/bin/sh /gluetun/update-qbt-port.sh {{PORTS}}"
-      # Let LAN clients reach the WebUI through the tunnel container
-      FIREWALL_OUTBOUND_SUBNETS: "192.168.100.0/24"
-      TZ: "America/Costa_Rica"
+      # Let explicitly configured local clients reach the WebUI.
+      FIREWALL_OUTBOUND_SUBNETS: "${LAN_SUBNETS:-192.168.1.0/24}"
+      TZ: "${TZ:-UTC}"
     volumes:
       - ${APPDATA}/gluetun:/gluetun
     healthcheck:
@@ -145,12 +130,12 @@ services:
 
   bazarr:
     <<: *common
-    image: lscr.io/linuxserver/bazarr:1.4.5
+    image: lscr.io/linuxserver/bazarr:1.6.0
     container_name: bazarr
     networks: [media]
     ports: ["6767:6767"]
     volumes:
-      - ${APPDATA}/bazarr:/config
+      - ${APPDATA}/bazarr:/config:Z
       - ${DATA}:/data
 
   # --------------------------------------------------------- media server ----
@@ -168,7 +153,7 @@ services:
     environment:
       <<: *env
       LOG_LEVEL: "info"
-      TZ: "America/Costa_Rica"
+      TZ: "${TZ:-UTC}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8191/health"]
       interval: 30s
@@ -185,7 +170,7 @@ services:
       - "8920:8920"          # https
       - "7359:7359/udp"      # client discovery
     devices:
-      - nvidia.com/gpu=all   # NVENC on the 3080 Ti (CDI, rootful)
+      - nvidia.com/gpu=all   # NVENC/NVDEC through NVIDIA CDI (rootful)
     environment:
       <<: *env
       NVIDIA_VISIBLE_DEVICES: "all"
@@ -203,3 +188,21 @@ services:
     ports: ["5055:5055"]
     volumes:
       - ${APPDATA}/jellyseerr:/app/config
+
+  # Dedicated request portal whose Radarr default requires Latin American
+  # Spanish audio. It shares the main Jellyfin and Radarr instances; keeping
+  # request policy in a separate portal avoids brittle per-user database hooks.
+  jellyseerr-latino:
+    <<: *common
+    image: docker.io/fallenbagel/jellyseerr:2.1.0
+    container_name: jellyseerr-latino
+    networks: [media]
+    ports: ["5056:5055"]
+    volumes:
+      - ${APPDATA}/jellyseerr-latino:/app/config:Z
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_NETWORK:-media-server_media}"
+      traefik.http.routers.jellyseerr-latino.rule: "Host(`${LATINO_REQUEST_HOST:-latino.example.internal}`)"
+      traefik.http.routers.jellyseerr-latino.entrypoints: "web"
+      traefik.http.services.jellyseerr-latino.loadbalancer.server.port: "5055"

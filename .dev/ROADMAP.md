@@ -1,141 +1,90 @@
-# Media Stack — Roadmap
+# Media Stack Roadmap
 
-Host: **gruff** (Bazzite, rootful podman). Companion to `README.md`, which
-describes what exists. This file describes what does not exist yet.
-
-Status legend: `[ ]` open · `[~]` in flight · `[x]` done · `[!]` blocked
-
----
+Status: `[ ]` planned · `[~]` in progress · `[x]` complete · `[!]` blocked
 
 ## Now
 
-### [ ] MS-1 — Whisper transcription as a Bazarr provider
+### [~] MS-1 — Whisper transcription fallback
 
-Local subtitle generation on the RTX 3080 Ti, so subtitle availability stops
-depending on scraping sites that die without warning (`podnapisi.net` did
-exactly that on 2026-07-30 — it no longer resolves from anywhere, including
-public DNS).
+Deploy local GPU transcription so subtitle coverage no longer depends entirely
+on external providers.
 
-- `whisper-asr-webservice` container, GPU via CDI (`nvidia.com/gpu=all`) — the
-  same mechanism already proven by Jellyfin NVENC and Ollama CUDA
-- Model `medium` (~5 GB; 11.6 GiB available on the card). `small` is faster but
-  noticeably worse on accents and noisy mixes
-- Wired into Bazarr as the `whisperai` provider, ranked **below** the scraping
-  providers — a human transcript beats a generated one, so this is the fallback
-- Scope limit, understood before building: Whisper `transcribe` produces text in
-  the audio's own language; Whisper `translate` **only ever outputs English**.
-  So this delivers English subtitles for English audio, and Spanish subtitles
-  only where the audio is already Spanish. It cannot produce Spanish subtitles
-  for an English film — see MS-2.
+- Run `whisper-asr-webservice` with NVIDIA CDI access.
+- Start with the `medium` model; measure speed, memory use, and transcript
+  quality before changing model size.
+- Integrate with Bazarr's `whisperai` provider below human subtitle providers.
+- Generate English subtitles from English audio and same-language subtitles from
+  other audio. Whisper's translation mode only outputs English; it cannot
+  directly produce Spanish subtitles from English audio.
+- Mark generated output clearly and never replace human subtitles silently.
 
-### [ ] MS-2 — Ollama translation stage (English → Spanish, Latin American)
+### [ ] MS-2 — English to Latin American Spanish translation
 
-The half that makes MS-1 useful for this household, and the piece nothing
-off-the-shelf provides.
+Translate a validated timed English SRT while preserving cue boundaries and
+timing.
 
-Verified need, 2026-07-31: with the Bazarr profile correctly requesting `ea`
-(Spanish Latino) rather than `es` (which resolves to Spain's variant on most
-providers), a manual provider search for *Spider-Man: Across the Spider-Verse*
-returned **23 candidate subtitles, all English, zero Latin American Spanish**.
-The providers cannot serve this. Local translation is not a nicety here.
+- Parse and validate SRT before translation.
+- Chunk with overlap/context suitable for feature-length content.
+- Instruct the model to use neutral Latin American Spanish and avoid Castilian
+  vocabulary and `vosotros`.
+- Validate cue count, timestamps, encoding, runtime bounds, and text completeness.
+- Run translation and transcription sequentially to avoid GPU contention.
+- Back up any destination, publish atomically, and roll back failed validation.
 
-- Input: Whisper's timed English SRT. Output: same timings, Spanish text
-- Ollama (already running, `ollama.dk.internal`, models on `/var/mnt/fast/ollama`)
-- The differentiator: an LLM can be *instructed* on dialect — "Latin American
-  Spanish, use ustedes never vosotros, no Castilian vocabulary". No subtitle
-  provider can promise that. On 2026-07-30 a scraped `es` subtitle for
-  Spider-Verse contained "tío" 14 times
-- Design work required: SRT parsing, timing preservation across chunk
-  boundaries, context-window chunking for feature-length transcripts, and a
-  quality gate before anything replaces an existing subtitle
-- Runs sequentially after MS-1, not concurrently — one model on the GPU at a time
+### [x] MS-3 — OpenSubtitles.com coverage
 
-### [ ] MS-3 — OpenSubtitles.com provider (cheap coverage win)
-
-Bazarr's provider set was deliberately restricted to credential-free providers
-during the 2026-07-31 build. That excluded OpenSubtitles.com, which holds by far
-the largest Latin American Spanish catalogue. A free account would materially
-improve `ea` coverage today, without waiting on MS-1/MS-2.
-
-Decide: free tier (rate-limited) vs VIP. Then add credentials to Bazarr.
-
----
+Bazarr 1.6.0 is configured with hash matching and Latin American Spanish
+language mapping. AI- and machine-translated provider results remain disabled.
+Free-tier quota exhaustion is treated as retryable rather than as a reason to
+change language policy.
 
 ## Next
 
 ### [ ] MS-4 — Librarian agent
 
-Recurring audit of the library, reporting rather than acting. Motivated by what
-a single unplanned pass on 2026-07-30 turned up by accident:
+Build a recurring report-first library audit covering:
 
-- 4.1 GB of duplicate *Mad Max: Fury Road* (a third copy of Black & Chrome)
-- A movie split across `CD1.avi` / `CD2.avi` that Radarr structurally cannot
-  import (multi-part is unsupported)
-- A folder containing artwork and no film at all
-- 11 titles whose folder names did not match any metadata entry confidently
+- redundant encodes and oversized-for-value files;
+- malformed or unsupported media layouts;
+- orphaned artwork and unmatched entries;
+- malformed, mislabeled, duplicated, out-of-runtime, wrong-cut, or probably
+  unsynchronized subtitles.
 
-Nobody was looking for any of that. Scope: redundant encodes, integrity
-failures, orphaned artwork, unmatched entries, oversized-for-value files.
-
-**Weight this higher than it looks.** `media10` is the *only* copy of the media
-library — its backup drive (WD-BC04E69J) is defective with 4,440 reallocated
-sectors and pending RMA. Knowing what is actually on that disk, and that it is
-healthy, matters more here than on a mirrored setup.
+Repairs require explicit approval, a backup, post-change verification, and
+rollback on failure.
 
 ### [ ] MS-5 — Semantic library search
 
-"The one where the guy can't form new memories" → *Memento*. Ollama plus
-Jellyfin metadata over 309 films, embedded and queryable in natural language.
-All components already run on this box.
+Embed library metadata and support natural-language title discovery without
+sending the private library inventory to an external service.
 
-### [ ] MS-6 — Recommender that learns from watch history
+### [ ] MS-6 — Per-user recommendations
 
-Explicitly *not* the streaming-service model, where ranking is driven by
-licensing economics rather than taste.
+Use separate Jellyfin watch histories to produce recommendations based on viewer
+preference rather than licensing or promotion economics.
 
-**Prerequisite already satisfied (2026-07-31):** `bajura` and `fabi` are now
-separate Jellyfin users, so watch history is two distinguishable streams rather
-than one merged household signal. Every episode watched from this date forward
-is training data. Starting that clock was the point of splitting the users.
+### [ ] MS-7 — Governed media events
 
-### [ ] MS-7 — Media events onto ubiweave
-
-Imports, failed grabs, disk pressure and scrub results posted to the bus, so the
-media host reports into DKOS like every other node. Precedent exists:
-`dk-notify-failure` already posts systemd unit failures to ubiweave.
-
----
+Publish import failures, disk pressure, integrity reports, and scrub results to
+the internal event plane without exposing media titles or user identities in
+public logs.
 
 ## Blocked
 
-### [!] MS-8 — 1337x and EZTV indexers
+### [!] MS-8 — Challenge-gated public indexers
 
-FlareSolverr v3.3.21 is deployed, healthy, and wired as a tagged indexer proxy
-in Prowlarr. It reaches both sites, detects the CloudFlare challenge ("Just a
-moment..."), and fails to solve it within 150 s. `/dev/shm` was raised from
-podman's default 64 MB to 512 MB, which is a real fix worth keeping, and it did
-not help.
-
-This is a solver capability gap against current CloudFlare Turnstile, not a
-configuration error. Routing through ares would likely be *worse* — datacenter
-IPs draw harsher Turnstile treatment than residential.
-
-Unblocks by itself if a newer FlareSolverr handles current challenges. Do not
-spend more effort here. If TV coverage becomes a priority, a private tracker
-invite is the better investment — no CloudFlare gate, better retention.
-
----
+The deployed challenge solver does not currently handle the target sites'
+Turnstile flow reliably. Do not weaken network isolation or spend repeated
+effort on the same solver version. Prefer a supported indexer or a legitimate
+private source with better retention.
 
 ## Deferred decisions
 
-- **Seeding policy.** qBittorrent has `max_ratio_enabled: false` and
-  `max_seeding_time_enabled: false` — it seeds indefinitely and never removes
-  anything. Fine at 7.9 TB free, but the torrent list grows without bound.
-  Suggested: ratio 2.0 or 14 days, whichever first, action = *remove torrent but
-  not files*. Safe because imports are hardlinks: removing the torrent drops one
-  directory entry, and the library keeps the data.
-- **Whisper model size.** `medium` recommended; revisit if GPU contention with
-  gaming or Ollama becomes noticeable.
-- **`es` as a fallback language.** Currently the profile is `en` + `ea` only, so
-  where no Latin American subtitle exists the result is none rather than a
-  Castilian one. Reconsider once MS-2 lands.
+- **Seeding policy:** choose a ratio/time ceiling and remove torrent entries
+  without deleting hardlinked library files.
+- **Whisper model size:** keep `medium` unless measured GPU contention or latency
+  justifies another model.
+- **Generic Spanish fallback:** continue preferring no subtitle over an unwanted
+  Castilian subtitle until the validated translation stage exists.
+- **Parallel language copies:** retain one Radarr file per title unless a real
+  requirement justifies a second Radarr and separate library.
