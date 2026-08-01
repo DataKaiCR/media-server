@@ -171,8 +171,14 @@ MOBI metadata, conservative edition/series grouping, cover evidence, and a
 hash-stable private phone intake role. Extracted document text is never persisted
 or sent over a network.
 
-Photo visual quality, EXIF curation, perceptual duplicates, application adapters,
-and all repair execution remain separate roadmap stages. See
+The photo module adds local deep decoding, EXIF capture-time/time-zone evidence,
+coordinate-free GPS controls, quality-review signals, RAW/rendered and
+still/motion pairing, local visual fingerprints, perceptual duplicate candidates,
+and bounded burst review groups. Decoded pixels are never persisted, and no
+quality or similarity signal authorizes deletion.
+
+Application adapters, semantic event/album curation, and all repair execution
+remain separate roadmap stages. See
 [docs/digital-librarian.md](docs/digital-librarian.md) for safety invariants,
 configuration, report interpretation, and intake workflow.
 

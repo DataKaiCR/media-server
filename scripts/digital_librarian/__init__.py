@@ -5,6 +5,7 @@ from .config import (
     CollectionConfig,
     ConfigError,
     LibrarianConfig,
+    PhotoAnalysisConfig,
     load_config,
 )
 from .scanner import audit_collection
@@ -14,6 +15,7 @@ __all__ = [
     "CollectionConfig",
     "ConfigError",
     "LibrarianConfig",
+    "PhotoAnalysisConfig",
     "audit_collection",
     "load_config",
 ]

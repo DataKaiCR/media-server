@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import struct
 import sys
 import tempfile
 import unittest
@@ -13,14 +14,27 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from digital_librarian.book_common import BoundedProcessResult, normalize_isbn, run_bounded
+from digital_librarian.book_common import normalize_isbn
+from digital_librarian.bounded import BoundedProcessResult, run_bounded
 from digital_librarian.books import add_bibliographic_groups, add_external_cover_evidence
 from digital_librarian.cli import AuditAlreadyRunning, run
-from digital_librarian.config import BookAnalysisConfig, ConfigError, load_config
+from digital_librarian.config import (
+    BookAnalysisConfig,
+    ConfigError,
+    PhotoAnalysisConfig,
+    load_config,
+)
 from digital_librarian.formats import inspect_file
 from digital_librarian.mobi_analysis import analyze_mobi
 from digital_librarian.model import CollectionReport, FileRecord
 from digital_librarian.pdf_analysis import analyze_pdf
+from digital_librarian.photo_analysis import analyze_photo, parse_tiff_exif, quality_evidence
+from digital_librarian.photo_groups import (
+    add_burst_groups,
+    add_perceptual_duplicate_groups,
+    add_photo_metadata_findings,
+    add_photo_pairs,
+)
 from digital_librarian.report import publish_report, report_document
 from digital_librarian.scanner import audit_collection
 
@@ -32,6 +46,41 @@ JPEG = (
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + (32).to_bytes(4, "big") + (16).to_bytes(4, "big")
 PDF = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n"
 ISBN = "9780306406157"
+
+
+def exif_tiff() -> bytes:
+    data = bytearray(512)
+    data[:8] = b"II" + struct.pack("<HI", 42, 8)
+
+    def entry(position, tag, value_type, count, value):
+        data[position:position + 8] = struct.pack("<HHI", tag, value_type, count)
+        if isinstance(value, int):
+            data[position + 8:position + 12] = struct.pack("<I", value)
+        else:
+            data[position + 8:position + 12] = value.ljust(4, b"\x00")
+
+    data[8:10] = struct.pack("<H", 5)
+    entry(10, 0x010F, 2, 7, 100)
+    entry(22, 0x0110, 2, 8, 108)
+    entry(34, 0x0112, 3, 1, struct.pack("<H", 6))
+    entry(46, 0x8769, 4, 1, 128)
+    entry(58, 0x8825, 4, 1, 200)
+    data[100:107] = b"Camera\x00"
+    data[108:116] = b"Model X\x00"
+    data[128:130] = struct.pack("<H", 3)
+    entry(130, 0x9003, 2, 20, 220)
+    entry(142, 0x9011, 2, 7, 240)
+    entry(154, 0xA434, 2, 8, 248)
+    data[200:202] = struct.pack("<H", 0)
+    data[220:240] = b"2024:01:02 03:04:05\x00"
+    data[240:247] = b"-06:00\x00"
+    data[248:256] = b"Lens 1\x00\x00"
+    return bytes(data[:256])
+
+
+def exif_jpeg() -> bytes:
+    payload = b"Exif\x00\x00" + exif_tiff()
+    return b"\xff\xd8\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload + b"\xff\xd9"
 
 
 def write_epub(path: Path, *, broken_spine: bool = False) -> None:
@@ -151,6 +200,31 @@ class ConfigTest(TemporaryCollections):
         self.assertEqual(config.book_analysis.pdf_sample_pages, 8)
         self.assertEqual(config.book_analysis.max_parser_memory_bytes, 536870912)
 
+    def test_loads_private_photo_analysis_controls(self) -> None:
+        path = self.write_config()
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                "\n[photo_analysis]\nlocation_detail = \"none\"\n"
+                "quality_signals = false\nperceptual_duplicates = true\n"
+                "near_duplicate_distance = 3\nburst_window_seconds = 4\n"
+                "burst_max_span_seconds = 20\nparser_timeout_seconds = 12\nmax_parser_memory_bytes = 536870912\n"
+                "max_image_pixels = 25000000\n"
+            )
+        settings = load_config(path).photo_analysis
+        self.assertEqual(settings.location_detail, "none")
+        self.assertFalse(settings.quality_signals)
+        self.assertEqual(settings.near_duplicate_distance, 3)
+        self.assertEqual(settings.burst_window_seconds, 4)
+        self.assertEqual(settings.burst_max_span_seconds, 20)
+        self.assertEqual(settings.max_image_pixels, 25_000_000)
+
+    def test_rejects_unsafe_photo_analysis_controls(self) -> None:
+        path = self.write_config()
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write("\n[photo_analysis]\nlocation_detail = \"exact\"\n")
+        with self.assertRaisesRegex(ConfigError, "none or presence"):
+            load_config(path)
+
     def test_rejects_unsafe_book_analysis_and_nonbook_intake(self) -> None:
         path = self.write_config(
             collections=[("photo-intake", "photos", self.photos, "intake")]
@@ -182,7 +256,10 @@ class FormatInspectionTest(TemporaryCollections):
     def test_reads_image_dimensions_and_pdf_termination(self) -> None:
         image = self.photos / "image.jpg"
         image.write_bytes(JPEG)
-        detected, metadata, findings = inspect_file(image, ".jpg", "photos")
+        detected, metadata, findings = inspect_file(
+            image, ".jpg", "photos",
+            photo_analysis=PhotoAnalysisConfig(enabled=False),
+        )
         self.assertEqual(detected, "jpeg")
         self.assertEqual(metadata["width"], 32)
         self.assertEqual(metadata["height"], 16)
@@ -380,6 +457,140 @@ class BookAnalysisTest(TemporaryCollections):
         )
 
 
+class PhotoAnalysisTest(TemporaryCollections):
+    def test_parses_exif_and_persists_no_decoded_pixels(self) -> None:
+        photo = self.photos / "example.jpg"
+        photo.write_bytes(exif_jpeg())
+        parsed = parse_tiff_exif(exif_tiff())
+        self.assertEqual(parsed["make"], "Camera")
+        self.assertEqual(parsed["orientation"], 6)
+        pixels = bytes(value * 4 for _ in range(64) for value in range(64))
+        with patch(
+            "digital_librarian.photo_analysis._decode_thumbnail",
+            return_value=BoundedProcessResult(0, pixels, b""),
+        ):
+            metadata, findings = analyze_photo(
+                photo, "jpeg", PhotoAnalysisConfig(quality_signals=False)
+            )
+        evidence = metadata["photo"]
+        self.assertEqual(evidence["capture_time"], "2024-01-02T03:04:05")
+        self.assertEqual(evidence["timezone_offset"], "-06:00")
+        self.assertEqual(evidence["camera_model"], "Model X")
+        self.assertTrue(evidence["location"]["gps_present"])
+        self.assertEqual(len(evidence["visual_fingerprint"]["value"]), 16)
+        self.assertEqual(
+            len(evidence["visual_fingerprint"]["local_descriptor_v1"]), 16
+        )
+        self.assertNotIn(pixels.hex(), json.dumps(metadata))
+        self.assertEqual(findings, [])
+
+    def test_location_suppression_quality_and_decode_timeout(self) -> None:
+        photo = self.photos / "dark.jpg"
+        photo.write_bytes(exif_jpeg())
+        dark_pixels = bytes(4096)
+        quality, reasons = quality_evidence(dark_pixels)
+        self.assertEqual(quality["dark_fraction"], 1.0)
+        self.assertIn("extreme-darkness", reasons)
+        settings = PhotoAnalysisConfig(location_detail="none")
+        with patch(
+            "digital_librarian.photo_analysis._decode_thumbnail",
+            return_value=BoundedProcessResult(0, dark_pixels, b""),
+        ):
+            metadata, findings = analyze_photo(photo, "jpeg", settings)
+        self.assertNotIn("location", metadata["photo"])
+        self.assertIn("photo-quality-review", {item.code for item in findings})
+        with patch(
+            "digital_librarian.photo_analysis._decode_thumbnail",
+            return_value=BoundedProcessResult(None, b"", b"", timed_out=True),
+        ):
+            _, timeout_findings = analyze_photo(
+                photo, "jpeg", PhotoAnalysisConfig()
+            )
+        self.assertEqual(timeout_findings[0].code, "photo-analysis-timeout")
+        with patch("digital_librarian.photo_analysis.Image", None), patch(
+            "digital_librarian.photo_analysis.shutil.which", return_value=None
+        ):
+            unavailable_metadata, unavailable_findings = analyze_photo(
+                photo, "jpeg", PhotoAnalysisConfig()
+            )
+        self.assertNotIn("deep_decode", unavailable_metadata["photo"])
+        self.assertEqual(unavailable_findings, [])
+
+    @staticmethod
+    def photo_record(
+        path: str,
+        fingerprint: str,
+        capture_time: str | None = None,
+        sha256: str | None = None,
+    ) -> FileRecord:
+        photo = {
+            "capture_time": capture_time,
+            "capture_time_valid": True,
+            "timezone_offset": None,
+            "timezone_offset_valid": True,
+            "visual_fingerprint": {
+                "algorithm": "dhash-64-v1",
+                "value": fingerprint,
+                "local_descriptor_v1": [128] * 16,
+            },
+            "quality": {"edge_strength": 5.0, "entropy_bits": 4.0},
+        }
+        return FileRecord(
+            path, ".jpg", 100, 1, "jpeg", sha256=sha256,
+            metadata={"width": 1000, "height": 800, "photo": photo},
+        )
+
+    def test_groups_perceptual_duplicates_without_collapsing_exact_files(self) -> None:
+        report = CollectionReport("photos", "photos", "library", "/private")
+        report.files = [
+            self.photo_record("a.jpg", "0000000000000000"),
+            self.photo_record("b.jpg", "0000000000000001"),
+            self.photo_record("different.jpg", "ffffffffffffffff"),
+        ]
+        add_perceptual_duplicate_groups(
+            report, PhotoAnalysisConfig(near_duplicate_distance=2)
+        )
+        group = next(
+            finding for finding in report.findings
+            if finding.code == "perceptual-duplicate-group"
+        )
+        self.assertEqual(group.evidence["count"], 2)
+        self.assertFalse(group.evidence["automatic_delete"])
+
+        exact = CollectionReport("photos", "photos", "library", "/private")
+        exact.files = [
+            self.photo_record("one.jpg", "0" * 16, sha256="a" * 64),
+            self.photo_record("two.jpg", "0" * 16, sha256="a" * 64),
+        ]
+        add_perceptual_duplicate_groups(exact, PhotoAnalysisConfig())
+        self.assertEqual(exact.findings, [])
+
+    def test_reports_pairs_metadata_gaps_and_bursts_as_evidence(self) -> None:
+        report = CollectionReport("photos", "photos", "library", "/private")
+        report.files = [
+            FileRecord("pair.dng", ".dng", 10, 1, None),
+            self.photo_record("pair.jpg", "1" * 16, "2024-01-01T00:00:00"),
+            FileRecord("pair.mov", ".mov", 20, 1, "mp4"),
+            self.photo_record("burst/a.jpg", "2" * 16, "2024-01-01T01:00:00"),
+            self.photo_record("burst/b.jpg", "3" * 16, "2024-01-01T01:00:01"),
+            self.photo_record("burst/c.jpg", "4" * 16, "2024-01-01T01:00:02"),
+        ]
+        settings = PhotoAnalysisConfig()
+        add_photo_pairs(report)
+        add_photo_metadata_findings(report)
+        add_burst_groups(report, settings)
+        codes = {finding.code for finding in report.findings}
+        self.assertIn("raw-rendered-pair", codes)
+        self.assertIn("live-photo-pair", codes)
+        self.assertIn("photo-timezone-missing", codes)
+        self.assertIn("possible-photo-burst", codes)
+        burst = next(
+            finding for finding in report.findings
+            if finding.code == "possible-photo-burst"
+        )
+        self.assertFalse(burst.evidence["automatic_selection"])
+
+
 class ScannerTest(TemporaryCollections):
     def test_finds_duplicates_orphans_case_collisions_and_skips_symlinks(self) -> None:
         (self.photos / "A.jpg").write_bytes(JPEG)
@@ -487,9 +698,10 @@ class ReportTest(TemporaryCollections):
         destination = self.reports / result["report_file"]
         document = json.loads(destination.read_text(encoding="utf-8"))
         self.assertEqual(result["mode"], "report-only")
-        self.assertEqual(document["schema_version"], 2)
+        self.assertEqual(document["schema_version"], 3)
         self.assertEqual(document["proposed_actions"], [])
         self.assertFalse(document["analysis"]["extracted_document_text_persisted"])
+        self.assertFalse(document["analysis"]["decoded_photo_pixels_persisted"])
         self.assertFalse(document["capabilities"]["external_metadata_queries"]["enabled"])
         self.assertEqual(document["summary"]["file_count"], 2)
         self.assertEqual(destination.stat().st_mode & 0o777, 0o600)

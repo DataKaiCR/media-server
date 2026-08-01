@@ -7,8 +7,9 @@ import struct
 import zipfile
 
 from .books import analyze_book
-from .config import BookAnalysisConfig
+from .config import BookAnalysisConfig, PhotoAnalysisConfig
 from .model import Finding
+from .photo_analysis import analyze_photo
 
 
 PHOTO_EXTENSIONS = {
@@ -160,6 +161,7 @@ def inspect_file(
     extension: str,
     kind: str,
     book_analysis: BookAnalysisConfig | None = None,
+    photo_analysis: PhotoAnalysisConfig | None = None,
 ) -> tuple[str | None, dict[str, object], list[Finding]]:
     findings: list[Finding] = []
     metadata: dict[str, object] = {}
@@ -216,4 +218,10 @@ def inspect_file(
         )
         metadata.update(book_metadata)
         findings.extend(book_findings)
+    if kind == "photos":
+        photo_metadata, photo_findings = analyze_photo(
+            path, detected, photo_analysis or PhotoAnalysisConfig()
+        )
+        metadata.update(photo_metadata)
+        findings.extend(photo_findings)
     return detected, metadata, findings
