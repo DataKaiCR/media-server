@@ -118,6 +118,22 @@ per title, so an existing English-only movie must be upgraded to dual/Latino
 audio rather than added as a parallel copy. Reliable results also require an
 indexer with strong Latin American coverage.
 
+## Seeding policy and evidence
+
+Torrent retention uses four explicit tiers: common public material has a
+three-day floor; standard material targets ratio 3 after at least 14 days;
+contributor material targets ratio 5 after at least 30 days; and scarce,
+Latin American, obscure, or low-swarm material remains protected for at least
+90 days and may be retained indefinitely. Tracker-specific seed-time and
+hit-and-run rules always override these defaults.
+
+The initial seeding auditor is report-only. It reads qBittorrent through a
+loopback-only API configuration and publishes mode-0600 aggregate evidence
+without torrent names, infohashes, tracker domains, announce URLs, passkeys, or
+per-torrent records. It cannot tag, pause, limit, or delete torrents. Tracker
+profiles remain the authoritative evidence for tracker applications. See
+[docs/seeding-evidence.md](docs/seeding-evidence.md).
+
 ## Movie quality policy
 
 The everyday library targets 1080p WEB-DL or Blu-ray encodes. The Latino
