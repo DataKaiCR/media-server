@@ -1,0 +1,47 @@
+version = 1
+report_dir = "/srv/private-state/seeding-evidence/reports"
+
+[qbittorrent]
+url = "http://127.0.0.1:8090"
+credential_file = "/srv/private-state/seeding-evidence/qbittorrent-credentials.toml"
+timeout_seconds = 20
+# Optional: verifies only that qBittorrent's configured listener matches the
+# VPN's current forwarded-port state. It does not prove external reachability.
+forwarded_port_file = "/srv/private-state/gluetun/forwarded_port"
+
+# Common public material becomes review-eligible after a three-day floor,
+# regardless of ratio. Never apply this tier where tracker rules require more.
+[[tiers]]
+id = "common"
+tag = "seed-common-3d"
+minimum_days = 3
+review_after_days = 3
+protected = false
+
+# Both the time floor and ratio target must be met. If ratio remains low,
+# review after 30 days rather than deleting automatically.
+[[tiers]]
+id = "standard"
+tag = "seed-standard-3x-14d"
+minimum_days = 14
+target_ratio = 3.0
+review_after_days = 30
+protected = false
+
+# Private-tracker and desirable releases use a longer floor and higher target.
+[[tiers]]
+id = "contributor"
+tag = "seed-contributor-5x-30d"
+minimum_days = 30
+target_ratio = 5.0
+review_after_days = 90
+protected = false
+
+# Rare, Latin American, obscure, or low-swarm material is never considered
+# eligible for automatic cleanup, regardless of ratio.
+[[tiers]]
+id = "stewardship"
+tag = "seed-stewardship-90d"
+minimum_days = 90
+review_after_days = 365
+protected = true

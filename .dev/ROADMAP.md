@@ -130,8 +130,10 @@ private source with better retention.
 
 ## Deferred decisions
 
-- **Seeding policy:** choose a ratio/time ceiling and remove torrent entries
-  without deleting hardlinked library files.
+- **Seeding automation:** retain the agreed 3-day common, 3x/14-day standard,
+  5x/30-day contributor, and protected 90-day stewardship tiers in report-only
+  mode until aggregate evidence and manual tagging are reviewed. Any later
+  cleanup must preserve hardlinked library files and obey tracker rules.
 - **Whisper model size:** keep `medium` unless measured GPU contention or latency
   justifies another model.
 - **Generic Spanish fallback:** continue preferring no subtitle over an unwanted
