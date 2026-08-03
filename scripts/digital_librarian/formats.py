@@ -6,8 +6,16 @@ from pathlib import Path
 import struct
 import zipfile
 
+from .audiovisual import (
+    ARTWORK_EXTENSIONS,
+    AUDIO_EXTENSIONS,
+    MEDIA_METADATA_EXTENSIONS,
+    SUBTITLE_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    analyze_audiovisual,
+)
 from .books import analyze_book
-from .config import BookAnalysisConfig, PhotoAnalysisConfig
+from .config import AudiovisualAnalysisConfig, BookAnalysisConfig, PhotoAnalysisConfig
 from .model import Finding
 from .photo_analysis import analyze_photo
 
@@ -23,11 +31,14 @@ BOOK_EXTENSIONS = {
     ".nfo", ".odt", ".pdf", ".png", ".pps", ".ppt", ".pptx", ".rar",
     ".rtf", ".txt", ".webp", ".xls", ".xlsx", ".zip",
 }
-AV_EXTENSIONS = {
-    ".avi", ".flac", ".m4a", ".m4v", ".mkv", ".mov", ".mp3", ".mp4",
-    ".ogg", ".srt", ".vtt", ".wav", ".webm",
-}
+AV_EXTENSIONS = (
+    VIDEO_EXTENSIONS | AUDIO_EXTENSIONS | SUBTITLE_EXTENSIONS
+    | ARTWORK_EXTENSIONS | MEDIA_METADATA_EXTENSIONS
+)
 EXPECTED_FORMATS = {
+    ".aac": {"aac"},
+    ".ass": {"ass"},
+    ".avi": {"avi"},
     ".azw3": {"mobi"},
     ".bmp": {"bmp"},
     ".cbr": {"rar"},
@@ -35,24 +46,44 @@ EXPECTED_FORMATS = {
     ".doc": {"ole"},
     ".docx": {"zip"},
     ".epub": {"epub"},
+    ".flac": {"flac"},
+    ".flv": {"flv"},
     ".gif": {"gif"},
     ".heic": {"heif"},
     ".heif": {"heif"},
+    ".idx": {"vobsub-index"},
     ".jpeg": {"jpeg"},
     ".jpg": {"jpeg"},
+    ".m4a": {"mp4"},
     ".m4b": {"mp4"},
+    ".m2ts": {"mpegts"},
+    ".m4v": {"mp4"},
+    ".mka": {"matroska"},
+    ".mkv": {"matroska"},
     ".mobi": {"mobi"},
     ".mov": {"mp4"},
+    ".mpeg": {"mpeg-program-stream"},
+    ".mpg": {"mpeg-program-stream"},
     ".mp3": {"mp3"},
     ".mp4": {"mp4"},
+    ".ogg": {"ogg"},
     ".odt": {"zip"},
+    ".opus": {"ogg"},
     ".pdf": {"pdf"},
     ".png": {"png"},
     ".ppt": {"ole"},
     ".pptx": {"zip"},
     ".rar": {"rar"},
+    ".srt": {"srt"},
+    ".ssa": {"ass"},
     ".tif": {"tiff"},
     ".tiff": {"tiff"},
+    ".ts": {"mpegts"},
+    ".vob": {"mpeg-program-stream"},
+    ".vtt": {"webvtt"},
+    ".wav": {"wav"},
+    ".webm": {"matroska"},
+    ".wmv": {"asf"},
     ".webp": {"webp"},
     ".xls": {"ole"},
     ".xlsx": {"zip"},
@@ -79,10 +110,30 @@ def detect_format(header: bytes, extension: str) -> str | None:
         return "gif"
     if header.startswith(b"BM"):
         return "bmp"
+    if header.startswith(b"RIFF") and header[8:12] == b"AVI ":
+        return "avi"
+    if header.startswith(b"RIFF") and header[8:12] == b"WAVE":
+        return "wav"
     if header.startswith((b"II*\x00", b"MM\x00*")):
         return "tiff"
     if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
         return "webp"
+    if header.startswith(b"\x1aE\xdf\xa3"):
+        return "matroska"
+    if header.startswith(b"fLaC"):
+        return "flac"
+    if header.startswith(b"OggS"):
+        return "ogg"
+    if header.startswith(b"FLV"):
+        return "flv"
+    if header.startswith(b"\x00\x00\x01\xba"):
+        return "mpeg-program-stream"
+    if header.startswith(b"\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c"):
+        return "asf"
+    if len(header) >= 377 and header[0] == header[188] == header[376] == 0x47:
+        return "mpegts"
+    if len(header) >= 389 and header[4] == header[196] == header[388] == 0x47:
+        return "mpegts"
     if len(header) >= 12 and header[4:8] == b"ftyp":
         brands = header[8:32]
         if any(brand in brands for brand in (b"heic", b"heix", b"hevc", b"mif1")):
@@ -100,7 +151,17 @@ def detect_format(header: bytes, extension: str) -> str | None:
         b"\xff\xfb", b"\xff\xf3", b"\xff\xf2",
     }:
         return "mp3"
-    if extension in {".txt", ".md", ".nfo", ".htm", ".html", ".rtf", ".xmp", ".aae"}:
+    if header[:2] and header[0] == 0xFF and header[1] & 0xF6 == 0xF0:
+        return "aac"
+    if extension == ".srt" and b"-->" in header:
+        return "srt"
+    if extension == ".vtt" and header.lstrip(b"\xef\xbb\xbf").startswith(b"WEBVTT"):
+        return "webvtt"
+    if extension in {".ass", ".ssa"} and b"[Script Info]" in header[:4096]:
+        return "ass"
+    if extension == ".idx" and b"VobSub index file" in header[:4096]:
+        return "vobsub-index"
+    if extension in {".txt", ".md", ".nfo", ".htm", ".html", ".rtf", ".xmp", ".aae", ".svg"}:
         return "text"
     return None
 
@@ -156,12 +217,40 @@ def inspect_zip(path: Path, extension: str) -> tuple[str, dict[str, object], lis
         return "zip", {}, [Finding("invalid-archive", "error", "Archive central directory is unreadable")]
 
 
+AnalysisConfig = AudiovisualAnalysisConfig | BookAnalysisConfig | PhotoAnalysisConfig
+
+
+def collection_analysis(
+    path: Path, extension: str, detected: str | None,
+    kind: str, analysis: AnalysisConfig | None,
+) -> tuple[dict[str, object], list[Finding]]:
+    if kind == "audiovisual":
+        settings = (
+            analysis if isinstance(analysis, AudiovisualAnalysisConfig)
+            else AudiovisualAnalysisConfig()
+        )
+        metadata, findings = analyze_audiovisual(path, extension, settings)
+        return ({"audiovisual": metadata} if metadata else {}), findings
+    if kind == "books":
+        settings = (
+            analysis if isinstance(analysis, BookAnalysisConfig)
+            else BookAnalysisConfig()
+        )
+        return analyze_book(path, extension, detected, settings)
+    if kind == "photos":
+        settings = (
+            analysis if isinstance(analysis, PhotoAnalysisConfig)
+            else PhotoAnalysisConfig()
+        )
+        return analyze_photo(path, detected, settings)
+    return {}, []
+
+
 def inspect_file(
     path: Path,
     extension: str,
     kind: str,
-    book_analysis: BookAnalysisConfig | None = None,
-    photo_analysis: PhotoAnalysisConfig | None = None,
+    analysis: AnalysisConfig | None = None,
 ) -> tuple[str | None, dict[str, object], list[Finding]]:
     findings: list[Finding] = []
     metadata: dict[str, object] = {}
@@ -212,16 +301,9 @@ def inspect_file(
                 evidence={"extension": extension or "<none>"},
             )
         )
-    if kind == "books":
-        book_metadata, book_findings = analyze_book(
-            path, extension, detected, book_analysis or BookAnalysisConfig()
-        )
-        metadata.update(book_metadata)
-        findings.extend(book_findings)
-    if kind == "photos":
-        photo_metadata, photo_findings = analyze_photo(
-            path, detected, photo_analysis or PhotoAnalysisConfig()
-        )
-        metadata.update(photo_metadata)
-        findings.extend(photo_findings)
+    collection_metadata, collection_findings = collection_analysis(
+        path, extension, detected, kind, analysis
+    )
+    metadata.update(collection_metadata)
+    findings.extend(collection_findings)
     return detected, metadata, findings

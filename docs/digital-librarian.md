@@ -4,15 +4,18 @@
 
 The Digital Librarian provides one governed, report-first inventory for private
 audiovisual, photo, book, and document collections. MS-4A supplies the read-only
-catalog, MS-4C adds private photo evidence, and MS-4D adds bounded book/document
-evidence. None has a move, rename, delete, metadata-write, import, OCR-write, or
-repair implementation.
+catalog, MS-4B adds bounded audiovisual evidence, MS-4C adds private photo
+evidence, and MS-4D adds bounded book/document evidence. None has a move,
+rename, delete, metadata-write, import, OCR-write, transcode, or repair
+implementation.
 
 Collection roots, filenames, metadata, hashes, and reports are private runtime
 state. They must not appear in commits, issues, CI output, or public logs.
 Extracted PDF text is analyzed in bounded temporary output and is never persisted
 in a report or log. Decoded photo pixels are reduced locally to numeric quality
 signals and visual fingerprints; pixel buffers are never written to reports.
+Subtitle dialogue and raw ffprobe output are likewise never persisted: only
+selected stream, timing, relationship, and provenance evidence is retained.
 
 ## Safety invariants
 
@@ -27,6 +30,10 @@ signals and visual fingerprints; pixel buffers are never written to reports.
 - Exact duplicates are evidence only; distinct formats and editions are not
   treated as interchangeable.
 - Encrypted documents are reported without password or DRM circumvention.
+- Audiovisual analysis does not decode frames, transcode media, or persist
+  subtitle dialogue, arbitrary container tags, or raw parser output.
+- Size, bitrate, duplicate-encode, and subtitle findings are review evidence and
+  never authorize deletion or replacement.
 - No external metadata or document-content network request is implemented.
 
 ## Configuration
@@ -39,6 +46,16 @@ directory:
 ```toml
 version = 1
 report_dir = "/srv/private-state/librarian/reports"
+
+[audiovisual_analysis]
+enabled = true
+parser_timeout_seconds = 30
+max_parser_output_bytes = 4194304
+max_parser_memory_bytes = 1073741824
+subtitle_max_bytes = 8388608
+large_file_bytes = 21474836480
+high_bitrate_bits_per_second = 40000000
+subtitle_runtime_tolerance_seconds = 30
 
 [book_analysis]
 pdf_text_layer = true
@@ -60,6 +77,22 @@ max_parser_memory_bytes = 1073741824
 max_image_pixels = 50000000
 
 [[collections]]
+id = "movie-library"
+kind = "audiovisual"
+role = "library"
+media_layout = "movies"
+root = "/srv/collections/media/movies"
+exclude_globs = ["@eaDir/**"]
+
+[[collections]]
+id = "series-library"
+kind = "audiovisual"
+role = "library"
+media_layout = "series"
+root = "/srv/collections/media/series"
+exclude_globs = ["@eaDir/**"]
+
+[[collections]]
 id = "primary-photos"
 kind = "photos"
 role = "library"
@@ -78,8 +111,11 @@ exclude_globs = []
 requires its root to be mode `0700` or stricter, and hashes every regular file,
 not only same-size duplicate candidates. Parser
 settings have enforced minimum and maximum values; unknown settings are rejected.
-Protect the configuration even though it contains no credentials because
-collection paths are private inventory information.
+Audiovisual collections accept `movies`, `series`, or conservative `mixed`
+layout evidence. Prefer separate movie and series roots when the filesystem
+already provides that boundary. Protect the configuration even though it
+contains no credentials because collection paths are private inventory
+information.
 
 ## Running an audit
 
@@ -113,6 +149,76 @@ Core findings include:
 - filenames that collide under case-insensitive filesystems;
 - orphaned XMP/AAE photo sidecars;
 - skipped symbolic links and files that race inspection or hashing.
+
+## Audiovisual evidence
+
+### Containers, streams, and bounded review thresholds
+
+For recognized video and audio containers, local `ffprobe` records only selected
+container formats, runtime, bitrate, chapter count, and bounded stream summaries.
+Video summaries include codec, dimensions, pixel format, and frame rate; audio
+summaries include codec, channels, layout, and valid language tags; subtitle
+summaries include codec, language, and default/forced disposition when exposed.
+Arbitrary title/comment tags, parser stderr, input filenames, and raw ffprobe JSON
+are discarded. The parser runs with wall-clock, address-space, regular-file
+output, and core-dump limits. Failure or timeout becomes evidence for that file
+instead of aborting the audit.
+
+Configured size and bitrate thresholds create `oversized-media-review` findings.
+They are triage thresholds, not quality judgments: a remux, archival master, long
+runtime, high frame rate, or unusual content may fully justify the result. The
+finding explicitly carries `automatic_action = false` and does not compare
+release names or seek a smaller download.
+
+### Layout, unmatched sidecars, and redundant encodes
+
+Each audiovisual collection declares a `media_layout`. Movie layout expects a
+scope directory around primary video. Series layout conservatively recognizes
+`SxxEyy` filename tokens and supports show/season nesting. Mixed layout is
+available when a cleaner root boundary does not exist, but produces weaker
+evidence. Findings cover root-level or unexpectedly deep primary media, series
+files without a recognized episode token, and scopes containing sidecars but no
+video.
+
+Multiple primary movie videos in one scope, or multiple series videos with the
+same recognized episode token, form `possible-redundant-encode-group` evidence.
+Known extras/trailer/sample directories are excluded from primary candidates.
+Groups retain paths, aggregate bytes, codecs, and resolutions only for manual
+review; `automatic_delete` is always false. Explicit alternate-cut/edition
+markers instead produce a distinct-edition group with automatic collapse false.
+Exact hashes remain separate core evidence and do not establish which encode is
+authoritative.
+
+Artwork and NFO files are checked against their configured movie or show scope.
+Episode-specific artwork receives a conservative same-stem check. Orphaned or
+unmatched sidecars are findings, never deletion candidates. The current module
+does not call Radarr, Sonarr, Jellyfin, or an online metadata service; filesystem
+evidence cannot by itself prove an application entry is unmatched.
+
+### Subtitle integrity, matching, and provenance
+
+External SRT, WebVTT, ASS/SSA, and VobSub index files receive bounded local timing
+analysis. Reports retain cue counts; counts of malformed, nonpositive,
+regressing, empty, or overlapping cues; and first/last timing bounds—never
+dialogue. Overlap is informational because simultaneous cues can be intentional. Binary VobSub
+payload analysis is explicitly limited rather than pretending to validate text.
+
+A subtitle is matched to an unambiguous same-directory video stem or, for a
+movie scope with exactly one primary video, to a conventional subtitle
+subdirectory/sidecar location. The Librarian reports unmatched/ambiguous
+subtitles, language evidence inferred from bounded provenance or conventional
+filename suffixes, timings beyond media runtime after a configurable tolerance,
+and possible long-form truncation before the media midpoint. These are review
+signals; credits, alternate cuts, signs-only tracks, and intentional partial
+subtitles can explain them.
+
+Generated-subtitle provenance recognizes the local Whisper and Ollama xattrs. It
+records marker presence and validity, compares a marked subtitle hash with the
+current bounded file, and reports incomplete, stale, or mismatched markers. It
+does not persist marker hashes, model strings, source dialogue, translated text,
+or manifest content. Unmarked files are classified only as `human-or-unmarked`;
+that is not proof of human authorship. Embedded subtitle streams have stream
+metadata evidence but no external-file provenance claim.
 
 ## Photo evidence
 
@@ -244,6 +350,10 @@ A finding is not permission to repair. In particular:
 
 - identical hashes do not establish which copy is authoritative;
 - matching title/author metadata does not prove a matching edition;
+- multiple video candidates do not prove that one is redundant or inferior;
+- an oversized signal can describe a legitimate remux or archival master;
+- overlapping or short subtitle timing can be intentional;
+- a same-stem subtitle match does not prove language, edition, or cut alignment;
 - a PDF parser failure may require recovery from its source, not rewriting;
 - an encrypted file may be legitimate and must not trigger circumvention;
 - an OCR recommendation may reflect intentionally sparse pages;
@@ -258,18 +368,20 @@ plan bound to source hashes before any mutation is possible.
 
 ## Optional tools and network boundary
 
-`pdfinfo` and `pdftotext` from Poppler, Pillow, and ImageMagick are optional and
-their availability is recorded in each report. Pillow is the preferred photo
-decoder and ImageMagick is the bounded fallback. Without a local decoder,
-shallow dimensions and EXIF evidence remain available but quality and visual
-fingerprints are absent. The implementation has no
-online bibliography client. Any future metadata adapter must be opt-in, disclose
-identifiers only, never upload document content, and record its provenance.
+`ffprobe`, `pdfinfo` and `pdftotext` from Poppler, Pillow, and ImageMagick are
+optional and their availability is recorded in each report. `ffprobe` is the
+bounded local audiovisual parser; without it, shallow signatures, layout, and
+sidecar relationships remain available. Pillow is the preferred photo decoder
+and ImageMagick is the bounded fallback. Without a local image decoder, shallow
+dimensions and EXIF evidence remain available but quality and visual fingerprints
+are absent. The implementation has no online bibliography or media metadata
+client. Any future metadata adapter must be opt-in, disclose identifiers only,
+never upload document or subtitle content, and record its provenance.
 
 ## Planned modules
 
-- **Audiovisual:** container/stream integrity, duplicate encodes, subtitle timing
-  and provenance, orphaned artwork, and application adapters.
+- **Audiovisual:** optional private application reconciliation and approved
+  review-plan generation remain separate from the deployed filesystem evidence.
 - **Photos:** event/album suggestions and optional semantic embeddings beyond
   the deployed local visual fingerprints.
 - **Curation:** physical-book catalog records, optional private application

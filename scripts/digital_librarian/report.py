@@ -13,11 +13,11 @@ import shutil
 import tempfile
 from typing import Any
 
-from .config import BookAnalysisConfig, PhotoAnalysisConfig
+from .config import AudiovisualAnalysisConfig, BookAnalysisConfig, PhotoAnalysisConfig
 from .model import CollectionReport
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def fsync_directory(path: Path) -> None:
@@ -33,6 +33,7 @@ def report_document(
     config_hash: str,
     book_analysis: BookAnalysisConfig | None = None,
     photo_analysis: PhotoAnalysisConfig | None = None,
+    audiovisual_analysis: AudiovisualAnalysisConfig | None = None,
 ) -> dict[str, Any]:
     summaries = [report.summary() for report in reports]
     return {
@@ -45,13 +46,19 @@ def report_document(
             "pdftotext": {"available": shutil.which("pdftotext") is not None},
             "pillow": {"available": importlib.util.find_spec("PIL") is not None},
             "imagemagick": {"available": shutil.which("magick") is not None},
+            "ffprobe": {"available": shutil.which("ffprobe") is not None},
             "external_metadata_queries": {"available": False, "enabled": False},
         },
         "analysis": {
+            "audiovisual": asdict(
+                audiovisual_analysis or AudiovisualAnalysisConfig()
+            ),
             "books": asdict(book_analysis or BookAnalysisConfig()),
             "photos": asdict(photo_analysis or PhotoAnalysisConfig()),
             "extracted_document_text_persisted": False,
             "decoded_photo_pixels_persisted": False,
+            "subtitle_text_persisted": False,
+            "raw_ffprobe_output_persisted": False,
         },
         "summary": {
             "collection_count": len(reports),

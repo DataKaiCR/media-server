@@ -258,7 +258,7 @@ class FormatInspectionTest(TemporaryCollections):
         image.write_bytes(JPEG)
         detected, metadata, findings = inspect_file(
             image, ".jpg", "photos",
-            photo_analysis=PhotoAnalysisConfig(enabled=False),
+            analysis=PhotoAnalysisConfig(enabled=False),
         )
         self.assertEqual(detected, "jpeg")
         self.assertEqual(metadata["width"], 32)
@@ -698,10 +698,12 @@ class ReportTest(TemporaryCollections):
         destination = self.reports / result["report_file"]
         document = json.loads(destination.read_text(encoding="utf-8"))
         self.assertEqual(result["mode"], "report-only")
-        self.assertEqual(document["schema_version"], 3)
+        self.assertEqual(document["schema_version"], 4)
         self.assertEqual(document["proposed_actions"], [])
         self.assertFalse(document["analysis"]["extracted_document_text_persisted"])
         self.assertFalse(document["analysis"]["decoded_photo_pixels_persisted"])
+        self.assertFalse(document["analysis"]["subtitle_text_persisted"])
+        self.assertFalse(document["analysis"]["raw_ffprobe_output_persisted"])
         self.assertFalse(document["capabilities"]["external_metadata_queries"]["enabled"])
         self.assertEqual(document["summary"]["file_count"], 2)
         self.assertEqual(destination.stat().st_mode & 0o777, 0o600)

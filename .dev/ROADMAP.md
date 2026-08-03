@@ -69,10 +69,14 @@ checks, and atomic mode-0600 JSON reports. Reports contain no proposed actions.
 The initial private baseline covered the primary photo and digital-book roots and
 verified that source size, timestamps, and inode metadata did not change.
 
-#### [ ] MS-4B — Audiovisual collections
+#### [x] MS-4B — Audiovisual collections
 
-Audit redundant encodes, oversized files, malformed layouts, orphaned artwork,
-unmatched entries, and subtitle integrity/provenance without changing libraries.
+Deployed bounded local container/stream evidence, configurable size/bitrate
+review signals, conservative movie/series layout and redundant-encode groups,
+orphaned artwork/NFO and unmatched subtitle checks, subtitle timing/runtime
+analysis, and generated-subtitle provenance validation. Subtitle dialogue, raw
+ffprobe output, media frames, and arbitrary container tags are never persisted;
+no transcode, tag, rename, replacement, or deletion path exists.
 
 #### [x] MS-4C — Photo collections
 
