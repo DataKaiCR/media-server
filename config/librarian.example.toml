@@ -1,6 +1,16 @@
 version = 1
 report_dir = "/srv/private-state/librarian/reports"
 
+[audiovisual_analysis]
+enabled = true
+parser_timeout_seconds = 30
+max_parser_output_bytes = 4194304
+max_parser_memory_bytes = 1073741824
+subtitle_max_bytes = 8388608
+large_file_bytes = 21474836480
+high_bitrate_bits_per_second = 40000000
+subtitle_runtime_tolerance_seconds = 30
+
 [book_analysis]
 pdf_text_layer = true
 pdf_sample_pages = 12
@@ -19,6 +29,22 @@ burst_max_span_seconds = 15
 parser_timeout_seconds = 20
 max_parser_memory_bytes = 1073741824
 max_image_pixels = 50000000
+
+[[collections]]
+id = "movie-library"
+kind = "audiovisual"
+role = "library"
+media_layout = "movies"
+root = "/srv/collections/media/movies"
+exclude_globs = ["@eaDir/**"]
+
+[[collections]]
+id = "series-library"
+kind = "audiovisual"
+role = "library"
+media_layout = "series"
+root = "/srv/collections/media/series"
+exclude_globs = ["@eaDir/**"]
 
 [[collections]]
 id = "primary-photos"

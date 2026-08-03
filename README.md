@@ -206,9 +206,16 @@ configuration, validation, and rollback details.
 The report-only Digital Librarian inventories private audiovisual, photo, book,
 and document collections without modifying originals. Its strict private TOML
 configuration defines disjoint collection roots and a report directory outside
-them. The initial core performs shallow format validation, exact duplicate
-hashing, filename collision and photo-sidecar checks, and atomic private JSON
-reporting with no proposed actions.
+them. The core performs shallow format validation, exact duplicate hashing,
+filename collision and photo-sidecar checks, and atomic private JSON reporting
+with no proposed actions.
+
+The audiovisual module adds bounded local container/stream evidence, configurable
+size and bitrate review signals, conservative movie/series layout and possible
+redundant-encode groups, orphaned artwork/NFO and unmatched subtitle checks, external
+subtitle timing/runtime evidence, and generated-subtitle provenance validation.
+It persists neither subtitle dialogue nor raw ffprobe output and cannot transcode,
+tag, rename, replace, or delete media.
 
 The books/documents module adds bounded PDF page and text-layer evidence, OCR
 recommendations without OCR execution, EPUB package and bibliographic checks,

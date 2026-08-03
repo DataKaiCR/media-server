@@ -8,8 +8,14 @@ import hashlib
 import os
 from pathlib import Path, PurePosixPath
 
+from .audiovisual_groups import add_audiovisual_findings
 from .books import add_bibliographic_groups, add_external_cover_evidence
-from .config import BookAnalysisConfig, CollectionConfig, PhotoAnalysisConfig
+from .config import (
+    AudiovisualAnalysisConfig,
+    BookAnalysisConfig,
+    CollectionConfig,
+    PhotoAnalysisConfig,
+)
 from .formats import inspect_file
 from .model import CollectionReport, FileRecord, Finding
 from .photo_groups import (
@@ -59,6 +65,7 @@ def scan_entries(
     config: CollectionConfig,
     book_analysis: BookAnalysisConfig | None = None,
     photo_analysis: PhotoAnalysisConfig | None = None,
+    audiovisual_analysis: AudiovisualAnalysisConfig | None = None,
 ) -> CollectionReport:
     report = CollectionReport(
         collection_id=config.collection_id,
@@ -66,6 +73,11 @@ def scan_entries(
         role=config.role,
         root=str(config.root),
     )
+    analysis = {
+        "audiovisual": audiovisual_analysis,
+        "books": book_analysis,
+        "photos": photo_analysis,
+    }[config.kind]
     for directory, dirnames, filenames in os.walk(config.root, topdown=True, followlinks=False):
         current = Path(directory)
         kept_dirs: list[str] = []
@@ -102,7 +114,7 @@ def scan_entries(
                 continue
             extension = path.suffix.casefold()
             detected, metadata, findings = inspect_file(
-                path, extension, config.kind, book_analysis, photo_analysis
+                path, extension, config.kind, analysis
             )
             try:
                 post_stat = os.lstat(path)
@@ -241,15 +253,20 @@ def audit_collection(
     config: CollectionConfig,
     book_analysis: BookAnalysisConfig | None = None,
     photo_analysis: PhotoAnalysisConfig | None = None,
+    audiovisual_analysis: AudiovisualAnalysisConfig | None = None,
 ) -> CollectionReport:
     photo_settings = photo_analysis or PhotoAnalysisConfig()
-    report = scan_entries(config, book_analysis, photo_settings)
+    audiovisual_settings = audiovisual_analysis or AudiovisualAnalysisConfig()
+    report = scan_entries(
+        config, book_analysis, photo_settings, audiovisual_settings
+    )
     add_case_collisions(report)
     add_orphan_sidecars(report)
     add_external_cover_evidence(report)
     add_bibliographic_groups(report)
     add_intake_hashes(report, config.root)
     add_exact_duplicates(report, config.root)
+    add_audiovisual_findings(report, config, audiovisual_settings)
     add_photo_metadata_findings(report)
     add_photo_pairs(report)
     add_perceptual_duplicate_groups(report, photo_settings)

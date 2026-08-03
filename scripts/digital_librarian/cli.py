@@ -44,12 +44,14 @@ def run(config_path: Path) -> dict[str, object]:
             raise AuditAlreadyRunning("another Librarian audit is running") from error
         reports = [
             audit_collection(
-                collection, config.book_analysis, config.photo_analysis
+                collection, config.book_analysis, config.photo_analysis,
+                config.audiovisual_analysis,
             )
             for collection in config.collections
         ]
         document = report_document(
-            reports, config_hash, config.book_analysis, config.photo_analysis
+            reports, config_hash, config.book_analysis, config.photo_analysis,
+            config.audiovisual_analysis,
         )
         destination, digest = publish_report(config.report_dir, document)
         fcntl.flock(lock, fcntl.LOCK_UN)

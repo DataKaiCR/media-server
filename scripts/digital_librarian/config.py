@@ -12,6 +12,7 @@ import tomllib
 COLLECTION_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 COLLECTION_KINDS = {"audiovisual", "books", "photos"}
 COLLECTION_ROLES = {"library", "intake"}
+AUDIOVISUAL_LAYOUTS = {"mixed", "movies", "series"}
 
 
 class ConfigError(ValueError):
@@ -25,6 +26,19 @@ class CollectionConfig:
     role: str
     root: Path
     exclude_globs: tuple[str, ...]
+    media_layout: str | None = None
+
+
+@dataclass(frozen=True)
+class AudiovisualAnalysisConfig:
+    enabled: bool = True
+    parser_timeout_seconds: int = 30
+    max_parser_output_bytes: int = 4_194_304
+    max_parser_memory_bytes: int = 1_073_741_824
+    subtitle_max_bytes: int = 8_388_608
+    large_file_bytes: int = 21_474_836_480
+    high_bitrate_bits_per_second: int = 40_000_000
+    subtitle_runtime_tolerance_seconds: int = 30
 
 
 @dataclass(frozen=True)
@@ -54,6 +68,7 @@ class PhotoAnalysisConfig:
 class LibrarianConfig:
     report_dir: Path
     collections: tuple[CollectionConfig, ...]
+    audiovisual_analysis: AudiovisualAnalysisConfig
     book_analysis: BookAnalysisConfig
     photo_analysis: PhotoAnalysisConfig
 
@@ -88,6 +103,54 @@ def _bounded_integer(
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ConfigError(f"{section}.{key} must be between {minimum} and {maximum}")
     return value
+
+
+def _audiovisual_analysis(value: object) -> AudiovisualAnalysisConfig:
+    if value is None:
+        return AudiovisualAnalysisConfig()
+    if not isinstance(value, dict):
+        raise ConfigError("audiovisual_analysis must be a TOML table")
+    allowed = {
+        "enabled", "parser_timeout_seconds", "max_parser_output_bytes",
+        "max_parser_memory_bytes", "subtitle_max_bytes", "large_file_bytes",
+        "high_bitrate_bits_per_second", "subtitle_runtime_tolerance_seconds",
+    }
+    unknown = set(value) - allowed
+    if unknown:
+        raise ConfigError(f"unknown audiovisual_analysis setting: {sorted(unknown)[0]}")
+    enabled = value.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ConfigError("audiovisual_analysis.enabled must be true or false")
+    return AudiovisualAnalysisConfig(
+        enabled=enabled,
+        parser_timeout_seconds=_bounded_integer(
+            value, "audiovisual_analysis", "parser_timeout_seconds", 30, (1, 120)
+        ),
+        max_parser_output_bytes=_bounded_integer(
+            value, "audiovisual_analysis", "max_parser_output_bytes",
+            4_194_304, (65_536, 16_777_216),
+        ),
+        max_parser_memory_bytes=_bounded_integer(
+            value, "audiovisual_analysis", "max_parser_memory_bytes",
+            1_073_741_824, (268_435_456, 4_294_967_296),
+        ),
+        subtitle_max_bytes=_bounded_integer(
+            value, "audiovisual_analysis", "subtitle_max_bytes",
+            8_388_608, (65_536, 67_108_864),
+        ),
+        large_file_bytes=_bounded_integer(
+            value, "audiovisual_analysis", "large_file_bytes",
+            21_474_836_480, (1_073_741_824, 1_099_511_627_776),
+        ),
+        high_bitrate_bits_per_second=_bounded_integer(
+            value, "audiovisual_analysis", "high_bitrate_bits_per_second",
+            40_000_000, (1_000_000, 500_000_000),
+        ),
+        subtitle_runtime_tolerance_seconds=_bounded_integer(
+            value, "audiovisual_analysis", "subtitle_runtime_tolerance_seconds",
+            30, (0, 300),
+        ),
+    )
 
 
 def _book_analysis(value: object) -> BookAnalysisConfig:
@@ -182,6 +245,7 @@ def load_config(path: Path) -> LibrarianConfig:
     if raw.get("version") != 1:
         raise ConfigError("configuration version must be 1")
     report_dir = _absolute_directory(raw.get("report_dir"), "report_dir", False)
+    audiovisual_analysis = _audiovisual_analysis(raw.get("audiovisual_analysis"))
     book_analysis = _book_analysis(raw.get("book_analysis"))
     photo_analysis = _photo_analysis(raw.get("photo_analysis"))
     rows = raw.get("collections")
@@ -216,7 +280,20 @@ def load_config(path: Path) -> LibrarianConfig:
             isinstance(pattern, str) and pattern for pattern in excludes
         ):
             raise ConfigError(f"collection {collection_id} exclude_globs must be strings")
-        collections.append(CollectionConfig(collection_id, kind, role, root, tuple(excludes)))
+        media_layout = row.get("media_layout")
+        if kind == "audiovisual":
+            media_layout = media_layout or "mixed"
+            if media_layout not in AUDIOVISUAL_LAYOUTS:
+                raise ConfigError(
+                    f"collection {collection_id} media_layout must be mixed, movies, or series"
+                )
+        elif media_layout is not None:
+            raise ConfigError("media_layout is limited to audiovisual collections")
+        collections.append(
+            CollectionConfig(
+                collection_id, kind, role, root, tuple(excludes), media_layout
+            )
+        )
         seen_ids.add(collection_id)
 
     for index, collection in enumerate(collections):
@@ -226,5 +303,6 @@ def load_config(path: Path) -> LibrarianConfig:
             if _is_within(collection.root, other.root) or _is_within(other.root, collection.root):
                 raise ConfigError("collection roots must not overlap")
     return LibrarianConfig(
-        report_dir, tuple(collections), book_analysis, photo_analysis
+        report_dir, tuple(collections), audiovisual_analysis,
+        book_analysis, photo_analysis
     )

@@ -1,6 +1,7 @@
 """Report-first auditing for private digital collections."""
 
 from .config import (
+    AudiovisualAnalysisConfig,
     BookAnalysisConfig,
     CollectionConfig,
     ConfigError,
@@ -11,6 +12,7 @@ from .config import (
 from .scanner import audit_collection
 
 __all__ = [
+    "AudiovisualAnalysisConfig",
     "BookAnalysisConfig",
     "CollectionConfig",
     "ConfigError",
