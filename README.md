@@ -100,6 +100,14 @@ The Latino request portal includes optional Traefik labels. Set
 `LATINO_REQUEST_HOST` and `TRAEFIK_NETWORK` for the local routing environment,
 or use the published port directly.
 
+## Jellyfin customization
+
+Jellyfin can use built-in branding, local artwork, and reviewed Custom CSS
+without adding Fanart.tv or another metadata provider. Dynamic web features such
+as Media Bar and Home Screen Sections are optional, version-sensitive layers and
+must be introduced one at a time with a stopped-service backup and client
+validation. See [docs/jellyfin-customization.md](docs/jellyfin-customization.md).
+
 ## Language-aware requests
 
 The standard Radarr profile requires English audio. Latin American Spanish

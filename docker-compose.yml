@@ -192,7 +192,7 @@ services:
 
   jellyfin:
     <<: *common
-    image: lscr.io/linuxserver/jellyfin:10.10.3
+    image: lscr.io/linuxserver/jellyfin:10.11.11
     container_name: jellyfin
     networks: [media]
     ports:
