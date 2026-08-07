@@ -92,7 +92,9 @@ services:
     volumes:
       - ${APPDATA}/qbittorrent:/config
       - ${DATA}:/data           # single mount: /data/torrents + /data/media
-    restart: unless-stopped
+    # Profile-gated download services must not be pulled into Podman's global
+    # boot restart when Gluetun was not explicitly started.
+    restart: "no"
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
