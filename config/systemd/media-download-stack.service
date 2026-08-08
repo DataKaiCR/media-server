@@ -1,0 +1,20 @@
+[Unit]
+Description=VPN-gated media download stack
+Documentation=file:///var/home/datakai/projects/media-server/README.md
+Wants=network-online.target
+After=network-online.target podman-restart.service
+Requires=podman-restart.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+KillMode=process
+TimeoutStartSec=240
+ExecStart=/usr/bin/podman start gluetun
+ExecStart=/bin/sh -ec 'for i in $(seq 1 90); do state=$(/usr/bin/podman inspect --format "{{.State.Status}}" gluetun); health=$(/usr/bin/podman inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" gluetun); test "$state" = running || exit 1; test "$health" = healthy && exit 0; sleep 2; done; exit 1'
+ExecStart=/usr/bin/podman start qbittorrent
+ExecStop=-/usr/bin/podman stop --time 30 qbittorrent
+ExecStop=-/usr/bin/podman stop --time 30 gluetun
+
+[Install]
+WantedBy=default.target
