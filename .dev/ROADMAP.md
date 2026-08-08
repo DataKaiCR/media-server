@@ -107,6 +107,15 @@ queues, and evidence-backed recommendations without exporting collection data.
 Execute only an approved, hash-bound plan. Every repair is backup-first, atomic
 where possible, post-change verified, audited, and rolled back on failure.
 
+### Remote family access and Cine Pelencho identities
+
+- [x] MS-CP-1 — Audit Jellyfin identity roles read-only and confirm that administration, household viewing, restricted viewing, and request automation remain separate concerns.
+- [ ] MS-CP-2 — Add the remaining household viewer and harden every non-admin policy, including parental limits, unrated content, library access, deletion, download, and remote-access permissions.
+- [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
+- [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
+- [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
+- [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default; treat Cine Pelencho sideloading or a future Android/Google TV port as optional client work.
+
 ### [ ] MS-5 — Semantic library search
 
 Embed library metadata and support natural-language title discovery without
