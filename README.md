@@ -96,6 +96,18 @@ sudo /path/to/podman-compose --profile download up -d gluetun
 sudo /path/to/podman-compose --profile download up -d qbittorrent
 ```
 
+On a host where the opted-in download path must survive reboots, install the
+ordered systemd unit. It waits for Gluetun to become healthy before starting
+qBittorrent, preserving the VPN kill switch:
+
+```bash
+sudo install -D -m 0644 \
+  config/systemd/media-download-stack.service \
+  /etc/systemd/system/media-download-stack.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now media-download-stack.service
+```
+
 The Latino request portal includes optional Traefik labels. Set
 `LATINO_REQUEST_HOST` and `TRAEFIK_NETWORK` for the local routing environment,
 or use the published port directly.
