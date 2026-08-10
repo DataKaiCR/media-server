@@ -153,6 +153,7 @@ class TemporaryCollections(unittest.TestCase):
             )
         path = self.root / "librarian.toml"
         path.write_text("\n".join(lines), encoding="utf-8")
+        path.chmod(0o600)
         return path
 
 
@@ -161,6 +162,84 @@ class ConfigTest(TemporaryCollections):
         config = load_config(self.write_config())
         self.assertEqual([row.collection_id for row in config.collections], ["photos", "books"])
         self.assertEqual(config.report_dir, self.reports.resolve())
+
+    def test_requires_private_regular_config_and_rejects_unknown_keys(self) -> None:
+        broad = self.write_config()
+        broad.chmod(0o644)
+        with self.assertRaisesRegex(ConfigError, "mode 0600"):
+            load_config(broad)
+        broad.chmod(0o600)
+        link = self.root / "linked-config.toml"
+        link.symlink_to(broad)
+        with self.assertRaisesRegex(ConfigError, "non-symlink"):
+            load_config(link)
+        with self.assertRaisesRegex(ConfigError, "absolute"):
+            load_config(Path("relative-config.toml"))
+
+        unknown_top = self.write_config()
+        unknown_top.write_text(
+            unknown_top.read_text(encoding="utf-8").replace(
+                "version = 1", "version = 1\nprivate_typo = true"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ConfigError, "unknown top-level"):
+            load_config(unknown_top)
+
+        unknown_collection = self.write_config(
+            collections=[("photos", "photos", self.photos)]
+        )
+        with unknown_collection.open("a", encoding="utf-8") as handle:
+            handle.write("private_typo = true\n")
+        with self.assertRaisesRegex(ConfigError, "unknown collection"):
+            load_config(unknown_collection)
+
+    def test_exact_parser_boundaries_reject_neighbors_and_booleans(self) -> None:
+        for value in (1, 120):
+            with self.subTest(valid_timeout=value):
+                path = self.write_config()
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        "\n[audiovisual_analysis]\n"
+                        f"parser_timeout_seconds = {value}\n"
+                    )
+                self.assertEqual(
+                    load_config(path).audiovisual_analysis.parser_timeout_seconds,
+                    value,
+                )
+        for value in (0, 121, "true"):
+            with self.subTest(invalid_timeout=value):
+                path = self.write_config()
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        "\n[audiovisual_analysis]\n"
+                        f"parser_timeout_seconds = {value}\n"
+                    )
+                with self.assertRaisesRegex(ConfigError, "between 1 and 120"):
+                    load_config(path)
+
+        for value in (0, 8):
+            with self.subTest(valid_distance=value):
+                path = self.write_config()
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        "\n[photo_analysis]\n"
+                        f"near_duplicate_distance = {value}\n"
+                    )
+                self.assertEqual(
+                    load_config(path).photo_analysis.near_duplicate_distance,
+                    value,
+                )
+        for value in (-1, 9, "true"):
+            with self.subTest(invalid_distance=value):
+                path = self.write_config()
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        "\n[photo_analysis]\n"
+                        f"near_duplicate_distance = {value}\n"
+                    )
+                with self.assertRaisesRegex(ConfigError, "between 0 and 8"):
+                    load_config(path)
 
     def test_rejects_report_inside_collection_and_overlapping_roots(self) -> None:
         with self.assertRaisesRegex(ConfigError, "outside"):
@@ -248,6 +327,7 @@ class ConfigTest(TemporaryCollections):
             'version=1\nreport_dir="relative"\n[[collections]]\nid="Private Name"\nkind="photos"\nroot="relative"\n',
             encoding="utf-8",
         )
+        path.chmod(0o600)
         with self.assertRaises(ConfigError):
             load_config(path)
 
@@ -297,6 +377,27 @@ class FormatInspectionTest(TemporaryCollections):
         self.assertEqual(metadata["bibliographic"]["series"], "Example Series")
         self.assertEqual(metadata["bibliographic"]["volume"], "2")
         self.assertEqual(findings, [])
+
+    def test_epub_mimetype_decompression_is_bounded(self) -> None:
+        epub = self.books / "oversized-mimetype.epub"
+        with zipfile.ZipFile(epub, "w") as archive:
+            archive.writestr(
+                "mimetype",
+                b"application/epub+zip" + b"x" * 1024,
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            archive.writestr("META-INF/container.xml", b"<container/>")
+        with patch.object(
+            zipfile.ZipFile,
+            "open",
+            side_effect=AssertionError("oversized mimetype was decompressed"),
+        ):
+            detected, metadata, findings = inspect_file(epub, ".epub", "books")
+        self.assertEqual(detected, "zip")
+        self.assertEqual(metadata["archive_members"], 2)
+        self.assertIn(
+            "invalid-epub-container", {finding.code for finding in findings}
+        )
 
     def test_reports_broken_epub_spine_without_reading_book_content(self) -> None:
         epub = self.books / "broken.epub"
@@ -714,6 +815,15 @@ class ReportTest(TemporaryCollections):
         )
         for path, digest in source_hashes.items():
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+
+    def test_failed_atomic_report_rename_leaves_no_stage_or_destination(self) -> None:
+        document = {"mode": "report-only", "proposed_actions": []}
+        with patch(
+            "digital_librarian.report.os.replace", side_effect=OSError("disk full")
+        ):
+            with self.assertRaises(OSError):
+                publish_report(self.reports, document)
+        self.assertEqual(list(self.reports.iterdir()), [])
 
     def test_report_document_contains_no_actions(self) -> None:
         reports = [audit_collection(load_config(self.write_config()).collections[0])]

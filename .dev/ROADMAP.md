@@ -116,6 +116,24 @@ where possible, post-change verified, audited, and rolled back on failure.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
 - [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default; treat Cine Pelencho sideloading or a future Android/Google TV port as optional client work.
 
+### Reliability hardening
+
+- [x] MS-TEST-1 — Iron-Grade harden the existing safety-critical suites.
+  Audited the earlier Librarian, seeding-evidence, generated-subtitle marker,
+  and translation suites against the canonical adversarial protocol. The 91-test
+  suite now covers exact boundaries, malformed and oversized inputs, nested
+  response shapes, symlink refusal, privacy reduction, failure rollback, and
+  atomic publication using temporary filesystems, xattrs, subprocesses, and a
+  real loopback HTTP server. Source-inclusive coverage reached 82.26% of lines
+  and 72.64% of branches; 21 of 21 non-equivalent representative mutations were
+  killed. Falsification exposed and fixed private-manifest mode/rollback,
+  arbitrary API evidence leakage, malformed numeric/shape crashes, missing
+  private Librarian configuration enforcement, unbounded EPUB mimetype reads,
+  and incomplete subtitle/Ollama input and transport bounds. The existing
+  private generated-subtitle manifest was corrected from mode `0644` to `0600`
+  with unchanged bytes, size, and modification time; no media or service state
+  was mutated.
+
 ### [ ] MS-5 — Semantic library search
 
 Embed library metadata and support natural-language title discovery without

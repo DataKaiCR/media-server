@@ -16,9 +16,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import seeding_evidence.client as client_module  # noqa: E402
 from seeding_evidence.client import ClientError, QBittorrentClient  # noqa: E402
 from seeding_evidence.config import ConfigError, load_config  # noqa: E402
 from seeding_evidence.cli import main  # noqa: E402
+from seeding_evidence.report import build_report, previous_report  # noqa: E402
 
 
 SECRET_NAME = "PRIVATE-TORRENT-TITLE"
@@ -231,7 +233,7 @@ protected = true
         config.chmod(0o600)
         return config
 
-    def test_end_to_end_report_is_private_aggregate_chained_and_read_only(self):
+    def test_end_to_end_report_is_private_aggregate_chained_and_read_only(self) -> None:
         with FakeServer() as port:
             config_path = self.write_config(port)
             stdout = io.StringIO()
@@ -293,7 +295,7 @@ protected = true
             },
         )
 
-    def test_rejects_non_loopback_url_and_broad_credentials(self):
+    def test_rejects_non_loopback_url_and_broad_credentials(self) -> None:
         with FakeServer() as port:
             with self.subTest("non-loopback"):
                 path = self.write_config(port, url="https://example.invalid:8080")
@@ -311,7 +313,7 @@ protected = true
                 with self.assertRaisesRegex(ConfigError, "mode 0600"):
                     load_config(path)
 
-    def test_rejects_protected_ratio_and_unknown_configuration(self):
+    def test_rejects_protected_ratio_and_unknown_configuration(self) -> None:
         with FakeServer() as port:
             path = self.write_config(port, extra="target_ratio = 5.0\n")
             with self.assertRaisesRegex(ConfigError, "protected tiers"):
@@ -323,12 +325,193 @@ protected = true
             with self.assertRaises(ConfigError):
                 load_config(path)
 
-    def test_client_rejects_mutation_endpoint(self):
+    def test_client_rejects_mutation_endpoint(self) -> None:
         with FakeServer() as port:
             config = load_config(self.write_config(port))
             client = QBittorrentClient(config.qbittorrent)
             with self.assertRaisesRegex(ClientError, "read-only allowlist"):
                 client.get_bytes("torrents/delete")
+
+    def test_config_accepts_exact_timeout_limits_and_rejects_neighbors(self) -> None:
+        for value in (1, 120):
+            with self.subTest(valid=value):
+                path = self.write_config(1)
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "timeout_seconds = 5", f"timeout_seconds = {value}"
+                    ),
+                    encoding="utf-8",
+                )
+                self.assertEqual(
+                    load_config(path).qbittorrent.timeout_seconds, value
+                )
+        for value in (0, 121, "true"):
+            with self.subTest(invalid=value):
+                path = self.write_config(1)
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(
+                        "timeout_seconds = 5", f"timeout_seconds = {value}"
+                    ),
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ConfigError, "between 1 and 120"):
+                    load_config(path)
+
+    def test_config_rejects_ambiguous_or_nonorigin_loopback_urls(self) -> None:
+        unsafe = (
+            "http://127.0.0.1:bad",
+            "http://127.0.0.1:8080/private",
+            "http://127.0.0.1:8080?private=true",
+            "http://user:password@127.0.0.1:8080",
+        )
+        for url in unsafe:
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(ConfigError, "URL|port|origin"):
+                    load_config(self.write_config(1, url=url))
+        ipv6 = load_config(
+            self.write_config(1, url="http://[::1]:8080/")
+        )
+        self.assertEqual(ipv6.qbittorrent.url, "http://[::1]:8080")
+
+    def test_client_bounds_bytes_json_and_nested_response_shapes(self) -> None:
+        config = load_config(self.write_config(1))
+        client = QBittorrentClient(config.qbittorrent)
+
+        class OversizedResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self, maximum):
+                return b"x" * maximum
+
+        with patch.object(client_module, "MAX_RESPONSE_BYTES", 8), patch.object(
+            client.opener, "open", return_value=OversizedResponse()
+        ):
+            with self.assertRaisesRegex(ClientError, "safety limit"):
+                client.get_bytes("app/version")
+        with patch.object(client, "get_bytes", return_value=b"\xff"):
+            with self.assertRaisesRegex(ClientError, "invalid JSON"):
+                client.get_json("torrents/info")
+
+        malformed_snapshots = (
+            ([], {"server_state": []}, {}),
+            (["not-a-torrent"], {"server_state": {}}, {}),
+        )
+        for torrents, main_data, preferences in malformed_snapshots:
+            with self.subTest(snapshot=(torrents, main_data, preferences)), patch.object(
+                client, "authenticate"
+            ), patch.object(
+                client, "get_bytes", return_value=b"v5.0.4"
+            ), patch.object(
+                client,
+                "get_json",
+                side_effect=[torrents, main_data, preferences],
+            ):
+                with self.assertRaisesRegex(ClientError, "unexpected response shape"):
+                    client.snapshot()
+        with patch.object(client, "authenticate"), patch.object(
+            client, "get_bytes", return_value=b"PRIVATE VERSION\n"
+        ):
+            with self.assertRaisesRegex(ClientError, "invalid version"):
+                client.snapshot()
+
+    def test_exact_policy_boundaries_and_hostile_values_are_aggregate_only(self) -> None:
+        config = load_config(self.write_config(1))
+        day = 86_400
+        torrents = [
+            {
+                "tags": "seed-common-3d",
+                "ratio": 1,
+                "seeding_time": 3 * day,
+                "num_complete": 5,
+                "progress": 1,
+                "state": "PRIVATE-STATE",
+                "uploaded": float("inf"),
+                "downloaded": 1,
+                "total_size": 10,
+            },
+            {
+                "tags": "seed-standard-3x-14d",
+                "ratio": 3,
+                "seeding_time": 14 * day,
+                "num_complete": 6,
+                "progress": 1,
+                "state": "uploading",
+            },
+            {
+                "tags": "seed-contributor-5x-30d",
+                "ratio": 5,
+                "seeding_time": 30 * day,
+                "num_complete": 6,
+                "progress": 1,
+                "state": "stalledUP",
+            },
+            {
+                "tags": "seed-stewardship-90d",
+                "ratio": 20,
+                "seeding_time": 90 * day,
+                "num_complete": float("inf"),
+                "progress": 1,
+                "state": "pausedUP",
+            },
+        ]
+        report = build_report(
+            config,
+            {
+                "version": "PRIVATE VERSION",
+                "torrents": torrents,
+                "server_state": {
+                    "connection_status": "PRIVATE CONNECTION",
+                    "use_alt_speed_limits": "false",
+                },
+                "preferences": {},
+            },
+        )
+
+        self.assertEqual(report["client"]["version"], "unknown")
+        self.assertEqual(report["client"]["connection_status"], "unknown")
+        self.assertFalse(report["client"]["alternative_speed_limits_active"])
+        summary = report["summary"]
+        self.assertEqual(summary["low_swarm_evidence_count"], 1)
+        self.assertEqual(summary["state_counts"]["unknown"], 1)
+        self.assertEqual(summary["ratio_buckets"]["1-to-under-3"], 1)
+        self.assertEqual(summary["ratio_buckets"]["3-to-under-5"], 1)
+        self.assertEqual(summary["ratio_buckets"]["5-to-under-20"], 1)
+        self.assertEqual(summary["ratio_buckets"]["20-or-more"], 1)
+        self.assertEqual(summary["seed_time_buckets"]["3-to-13-days"], 1)
+        self.assertEqual(summary["seed_time_buckets"]["14-to-29-days"], 1)
+        self.assertEqual(summary["seed_time_buckets"]["30-to-89-days"], 1)
+        self.assertEqual(summary["seed_time_buckets"]["90-days-or-more"], 1)
+        tiers = {tier["id"]: tier for tier in report["tiers"]}
+        self.assertEqual(tiers["common"]["policy_threshold_met_count"], 1)
+        self.assertEqual(tiers["standard"]["policy_threshold_met_count"], 1)
+        self.assertEqual(tiers["contributor"]["policy_threshold_met_count"], 1)
+        rendered = json.dumps(report)
+        self.assertNotIn("PRIVATE-STATE", rendered)
+        self.assertNotIn("PRIVATE VERSION", rendered)
+        self.assertNotIn("PRIVATE CONNECTION", rendered)
+
+    def test_previous_report_ignores_symlinks_and_untrusted_names(self) -> None:
+        self.reports.mkdir(mode=0o700)
+        legitimate = self.reports / "seeding-evidence-20260101T000000.000000Z.json"
+        legitimate.write_bytes(b"legitimate\n")
+        secret = self.root / "private-target"
+        secret.write_bytes(b"private target bytes")
+        link = self.reports / "seeding-evidence-20990101T000000.000000Z.json"
+        link.symlink_to(secret)
+        (self.reports / "seeding-evidence-PRIVATE-NAME.json").write_bytes(
+            b"untrusted"
+        )
+
+        evidence = previous_report(self.reports)
+
+        self.assertEqual(evidence["name"], legitimate.name)
+        self.assertEqual(
+            evidence["sha256"], hashlib.sha256(legitimate.read_bytes()).hexdigest()
+        )
 
 
 if __name__ == "__main__":

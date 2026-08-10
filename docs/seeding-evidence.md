@@ -50,8 +50,9 @@ username = "<private-qbittorrent-username>"
 password = "<private-qbittorrent-password>"
 ```
 
-The qBittorrent URL is restricted to a loopback host so credentials cannot be
-sent to an external endpoint by configuration mistake. Authentication is
+The qBittorrent URL is restricted to a loopback HTTP(S) origin with a valid port
+and no credentials, path, query, or fragment, so credentials cannot be sent to
+an external or ambiguous endpoint by configuration mistake. Authentication is
 optional only when qBittorrent already permits the local request.
 
 An optional `forwarded_port_file` lets the report compare qBittorrent's listener
@@ -79,8 +80,15 @@ Each report includes:
 - unclassified and conflicting-policy-tag counts;
 - bounded low-swarm evidence based on qBittorrent's reported seeder count;
 - upload-limit and forwarded-port alignment evidence;
-- a hash pointer to the previous report;
+- a hash pointer to the previous regular, generated-name report; symlinks and
+  untrusted filenames are ignored;
 - explicit privacy, authority, and no-mutation declarations.
+
+API responses have a fixed byte ceiling and strict nested shapes. Version,
+connection, and torrent-state values are allowlisted or reduced to `unknown`,
+so malformed local responses cannot inject arbitrary strings into a report.
+Non-finite numeric values reduce to bounded aggregate defaults rather than
+crashing the audit.
 
 It never includes enough information to reconstruct a torrent inventory. Daily
 reports therefore support internal policy review but do not replace tracker

@@ -51,6 +51,8 @@ _IDX_TIME_RE = re.compile(r"^timestamp:\s*(\d{1,3}:\d{2}:\d{2}:\d{3})", re.IGNOR
 
 
 def _positive_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         result = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -63,9 +65,11 @@ def _positive_float(value: object) -> float | None:
 def _bounded_integer(value: object, maximum: int = 1_000_000_000) -> int | None:
     if isinstance(value, bool):
         return None
-    try:
-        result = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, str) and value.isascii() and value.isdigit():
+        result = int(value)
+    else:
         return None
     return result if 0 <= result <= maximum else None
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.cookiejar
 import json
+import re
 from typing import Any
 import urllib.parse
 import urllib.request
@@ -12,6 +13,7 @@ from .config import QBittorrentConfig
 
 
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+VERSION_RE = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
 READ_ENDPOINTS = {
     "app/preferences",
     "app/version",
@@ -70,7 +72,7 @@ class QBittorrentClient:
     def get_json(self, endpoint: str) -> Any:
         try:
             return json.loads(self.get_bytes(endpoint))
-        except json.JSONDecodeError as error:
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ClientError("qBittorrent returned invalid JSON") from error
 
     def snapshot(self) -> dict[str, Any]:
@@ -79,14 +81,22 @@ class QBittorrentClient:
             version = self.get_bytes("app/version").decode("ascii").strip()
         except UnicodeDecodeError as error:
             raise ClientError("qBittorrent returned an invalid version") from error
+        if not VERSION_RE.fullmatch(version):
+            raise ClientError("qBittorrent returned an invalid version")
         torrents = self.get_json("torrents/info")
         main_data = self.get_json("sync/maindata?rid=0")
         preferences = self.get_json("app/preferences")
-        if not isinstance(torrents, list) or not isinstance(main_data, dict) or not isinstance(preferences, dict):
+        if (
+            not isinstance(torrents, list)
+            or not all(isinstance(row, dict) for row in torrents)
+            or not isinstance(main_data, dict)
+            or not isinstance(main_data.get("server_state"), dict)
+            or not isinstance(preferences, dict)
+        ):
             raise ClientError("qBittorrent returned an unexpected response shape")
         return {
             "version": version,
             "torrents": torrents,
-            "server_state": main_data.get("server_state") or {},
+            "server_state": main_data["server_state"],
             "preferences": preferences,
         }

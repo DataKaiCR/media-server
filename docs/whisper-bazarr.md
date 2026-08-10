@@ -53,10 +53,14 @@ The script never edits subtitle content. For Whisper output it records:
 - `user.media_server.generated=true`;
 - `user.media_server.subtitle_source=whisperai`;
 - a SHA-256 xattr;
-- an append-only JSONL record under private Bazarr state.
+- an append-only mode-`0600` JSONL record under mode-`0700` private Bazarr
+  state.
 
+The marker refuses subtitle and manifest symlinks, hashes a stable regular file,
+and restores the exact prior xattr state if private manifest publication fails.
 When a human provider later writes the same subtitle path, the script clears the
-generated xattrs. Bazarr history remains the audit trail for both events.
+generated xattrs and fails loudly if marker removal is not possible. Bazarr
+history remains the audit trail for both events.
 
 ## Validation
 

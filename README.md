@@ -205,16 +205,20 @@ audio extracted by Bazarr rather than direct media-library access.
 
 Whisper output is excluded from `ffsubsync` because its timestamps already come
 from the audio. Bazarr records the provider in history, and post-processing adds
-source/hash xattrs plus an append-only private manifest without modifying SRT
-content. A later human-provider replacement clears the generated markers.
+source/hash xattrs plus an append-only mode-`0600` private manifest without
+modifying SRT content. Symlink targets are refused, and a manifest failure
+restores the prior xattr state. A later human-provider replacement clears the
+generated markers.
 Bazarr's upgrade search may therefore replace generated output with a better
 human subtitle.
 
 Whisper can transcribe English audio and translate other audio **to English**;
-it cannot translate English into Spanish. A separate Ollama pipeline translates
-a validated English SRT into neutral Latin American Spanish while preserving cue
-identifiers and timestamps. Translation is serialized against Whisper, validated
-before an atomic publish, and recorded with model/prompt provenance. It refuses
+it cannot translate English into Spanish. A separate loopback-only Ollama
+pipeline translates a size-bounded, validated English SRT into neutral Latin
+American Spanish while preserving cue identifiers and timestamps. Model
+responses are locally bounded and strictly shaped. Translation is serialized
+against Whisper, validated before an atomic publish, and recorded with
+model/prompt provenance. It refuses
 to replace human or unmarked subtitles, and its generated filename does not
 satisfy Bazarr's human `ea` target.
 

@@ -87,15 +87,23 @@ def _loopback_url(value: object) -> str:
     if not isinstance(value, str) or not value:
         raise ConfigError("qbittorrent.url must be a non-empty URL")
     parsed = urlsplit(value)
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ConfigError("qbittorrent.url contains an invalid port") from error
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.path not in {"", "/"}
         or parsed.query
         or parsed.fragment
     ):
-        raise ConfigError("qbittorrent.url must be an HTTP(S) URL without credentials, query, or fragment")
+        raise ConfigError(
+            "qbittorrent.url must be an HTTP(S) origin without credentials, "
+            "path, query, or fragment"
+        )
     hostname = parsed.hostname
     is_loopback = hostname == "localhost"
     if not is_loopback:
