@@ -14,6 +14,7 @@ from typing import Any
 from .bounded import BoundedProcessResult, run_bounded
 from .config import AudiovisualAnalysisConfig
 from .model import Finding
+from .packet_order import sample_packet_order
 
 
 VIDEO_EXTENSIONS = {
@@ -109,6 +110,7 @@ def _stream_summary(stream: object) -> dict[str, Any] | None:
         return None
     codec = stream.get("codec_name")
     result: dict[str, Any] = {
+        "index": _bounded_integer(stream.get("index"), 4096),
         "type": stream_type,
         "codec": codec if isinstance(codec, str) and re.fullmatch(r"[a-z0-9_]{1,32}", codec) else None,
     }
@@ -119,6 +121,8 @@ def _stream_summary(stream: object) -> dict[str, Any] | None:
     if isinstance(disposition, dict):
         result["default"] = bool(disposition.get("default"))
         result["forced"] = bool(disposition.get("forced"))
+        if stream_type == "video":
+            result["attached_picture"] = bool(disposition.get("attached_pic"))
     if stream_type == "video":
         result.update({
             "width": _bounded_integer(stream.get("width"), 100_000),
@@ -150,8 +154,8 @@ def _probe_result(path: Path, settings: AudiovisualAnalysisConfig) -> BoundedPro
             "ffprobe", "-v", "error", "-print_format", "json",
             "-show_entries",
             "format=format_name,duration,bit_rate:"
-            "stream=codec_type,codec_name,width,height,pix_fmt,r_frame_rate,channels,channel_layout:"
-            "stream_tags=language:stream_disposition=default,forced:"
+            "stream=index,codec_type,codec_name,width,height,pix_fmt,r_frame_rate,channels,channel_layout:"
+            "stream_tags=language:stream_disposition=default,forced,attached_pic:"
             "chapter=start_time,end_time",
             str(path),
         ],
@@ -208,6 +212,13 @@ def probe_media(
         findings.append(Finding("media-duration-missing", "warning", "Media runtime is unavailable or invalid"))
     if any(not stream.get("width") or not stream.get("height") for stream in video_streams):
         findings.append(Finding("video-dimensions-invalid", "error", "A video stream has missing or invalid dimensions"))
+    if extension in VIDEO_EXTENSIONS and video_streams and audio_streams:
+        packet_order, packet_findings = sample_packet_order(
+            path, raw_streams if isinstance(raw_streams, list) else [], settings
+        )
+        if packet_order:
+            media["packet_order_sample"] = packet_order
+        findings.extend(packet_findings)
     large = size >= settings.large_file_bytes
     high_bitrate = bit_rate is not None and bit_rate >= settings.high_bitrate_bits_per_second
     if large or high_bitrate:

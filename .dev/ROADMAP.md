@@ -134,6 +134,30 @@ where possible, post-change verified, audited, and rolled back on failure.
   with unchanged bytes, size, and modification time; no media or service state
   was mutated.
 
+### Playback reliability
+
+- [x] MS-PLAY-1 — Repair pathological audio packet interleaving.
+  Diagnosed one dual-audio MKV whose selected Spanish DTS packets appeared as
+  much as roughly 378 seconds behind video in physical packet order. Jellyfin
+  therefore stalled while probing or transcoding at playback startup on webOS;
+  reproducing the stall with AAC and E-AC3 outputs ruled out the target codec as
+  the primary cause. Rebuilt the container with the video and English audio
+  stream-copied and only the Spanish track converted to AC3 5.1, then verified
+  sustained 1080p Spanish playback on the target television without decoder
+  errors. No client retry workaround was added.
+- [x] MS-PLAY-2 — Detect severe interleave anomalies report-only.
+  Deployed bounded leading-packet sampling that uses packet byte positions when
+  available, retains only aggregate per-stream skew evidence, and flags extreme
+  audio/video physical-order lag or lead. Parser time, memory, output, and packet
+  counts are bounded; process failures and malformed selected rows retain
+  explicit partial evidence. Raw packet rows, timestamps, and positions are not
+  persisted, and no remux or transcode path exists. The Iron-Grade falsification
+  matrix covers the original delayed-audio shape, physical-order fallback,
+  exact boundaries, timestamp regressions, malformed and oversized rows, every
+  bounded-process failure, stream-selection traps, privacy, and real-tool
+  integration. Six representative injected regressions were killed; a private
+  read-only pilot completed without findings or source metadata changes.
+
 ### [ ] MS-5 — Semantic library search
 
 Embed library metadata and support natural-language title discovery without

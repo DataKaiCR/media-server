@@ -14,8 +14,9 @@ state. They must not appear in commits, issues, CI output, or public logs.
 Extracted PDF text is analyzed in bounded temporary output and is never persisted
 in a report or log. Decoded photo pixels are reduced locally to numeric quality
 signals and visual fingerprints; pixel buffers are never written to reports.
-Subtitle dialogue and raw ffprobe output are likewise never persisted: only
-selected stream, timing, relationship, and provenance evidence is retained.
+Subtitle dialogue, raw ffprobe output, and individual packet rows are likewise
+never persisted: only selected stream, aggregate packet-order, timing,
+relationship, and provenance evidence is retained.
 
 ## Safety invariants
 
@@ -31,7 +32,10 @@ selected stream, timing, relationship, and provenance evidence is retained.
   treated as interchangeable.
 - Encrypted documents are reported without password or DRM circumvention.
 - Audiovisual analysis does not decode frames, transcode media, or persist
-  subtitle dialogue, arbitrary container tags, or raw parser output.
+  subtitle dialogue, arbitrary container tags, raw parser output, packet
+  timestamps, or packet byte positions.
+- Packet-order analysis reads only a configured leading packet count under the
+  same parser time, memory, and output limits as other audiovisual evidence.
 - Size, bitrate, duplicate-encode, and subtitle findings are review evidence and
   never authorize deletion or replacement.
 - No external metadata or document-content network request is implemented.
@@ -52,6 +56,9 @@ enabled = true
 parser_timeout_seconds = 30
 max_parser_output_bytes = 4194304
 max_parser_memory_bytes = 1073741824
+packet_order_sampling = true
+packet_sample_packets = 50000
+interleave_skew_threshold_seconds = 30
 subtitle_max_bytes = 8388608
 large_file_bytes = 21474836480
 high_bitrate_bits_per_second = 40000000
@@ -171,6 +178,32 @@ They are triage thresholds, not quality judgments: a remux, archival master, lon
 runtime, high frame rate, or unusual content may fully justify the result. The
 finding explicitly carries `automatic_action = false` and does not compare
 release names or seek a smaller download.
+
+### Bounded physical packet-order sampling
+
+When enabled for a video with audio, a second local `ffprobe` invocation reads at
+most `packet_sample_packets` leading packets. It retains only aggregate counts,
+stream indexes, position coverage, and maximum audio lead/lag relative to the
+primary video timestamp frontier. If byte positions are present for every
+sampled packet, they define physical ordering; otherwise the demuxer's bounded
+output order is used. Invalid selected rows are counted only in aggregate and
+make the sample explicitly incomplete. Individual timestamps, byte positions,
+filenames, tags, and raw packet rows are discarded.
+
+A stream crossing `interleave_skew_threshold_seconds` creates
+`media-packet-interleave-skew`. This identifies severe physical scheduling that
+can force a player or transcoder to read far ahead before synchronized audio is
+available. It is bounded leading-file evidence rather than proof that every
+packet is malformed. Deliberately sparse or late-starting tracks, timestamp
+discontinuities, and unusual containers still require review. Timeout,
+output-limit, and parser failures retain partial aggregate evidence and an
+incomplete-sample finding; no repair is attempted and `automatic_action` remains
+false.
+
+The focused Iron-Grade suite falsifies physical ordering, whole-sample fallback,
+exact skew boundaries, regressing timestamps, DTS/PTS selection, malformed and
+oversized rows, parser failure recovery, stream-selection traps, privacy, and
+read-only real-tool integration.
 
 ### Layout, unmatched sidecars, and redundant encodes
 
@@ -354,6 +387,8 @@ A finding is not permission to repair. In particular:
 - matching title/author metadata does not prove a matching edition;
 - multiple video candidates do not prove that one is redundant or inferior;
 - an oversized signal can describe a legitimate remux or archival master;
+- packet-order skew can reflect an unusual intentional timeline and requires
+  review rather than automatic remuxing;
 - overlapping or short subtitle timing can be intentional;
 - a same-stem subtitle match does not prove language, edition, or cut alignment;
 - a PDF parser failure may require recovery from its source, not rewriting;
@@ -372,8 +407,9 @@ plan bound to source hashes before any mutation is possible.
 
 `ffprobe`, `pdfinfo` and `pdftotext` from Poppler, Pillow, and ImageMagick are
 optional and their availability is recorded in each report. `ffprobe` is the
-bounded local audiovisual parser; without it, shallow signatures, layout, and
-sidecar relationships remain available. Pillow is the preferred photo decoder
+bounded local audiovisual parser, including optional leading packet-order
+sampling; without it, shallow signatures, layout, and sidecar relationships
+remain available. Pillow is the preferred photo decoder
 and ImageMagick is the bounded fallback. Without a local image decoder, shallow
 dimensions and EXIF evidence remain available but quality and visual fingerprints
 are absent. The implementation has no online bibliography or media metadata

@@ -36,6 +36,9 @@ class AudiovisualAnalysisConfig:
     parser_timeout_seconds: int = 30
     max_parser_output_bytes: int = 4_194_304
     max_parser_memory_bytes: int = 1_073_741_824
+    packet_order_sampling: bool = True
+    packet_sample_packets: int = 50_000
+    interleave_skew_threshold_seconds: int = 30
     subtitle_max_bytes: int = 8_388_608
     large_file_bytes: int = 21_474_836_480
     high_bitrate_bits_per_second: int = 40_000_000
@@ -106,6 +109,47 @@ def _bounded_integer(
     return value
 
 
+def _audiovisual_config(
+    table: dict[str, object], enabled: bool, packet_order_sampling: bool
+) -> AudiovisualAnalysisConfig:
+    section = "audiovisual_analysis"
+    return AudiovisualAnalysisConfig(
+        enabled=enabled,
+        parser_timeout_seconds=_bounded_integer(
+            table, section, "parser_timeout_seconds", 30, (1, 120)
+        ),
+        max_parser_output_bytes=_bounded_integer(
+            table, section, "max_parser_output_bytes",
+            4_194_304, (65_536, 16_777_216),
+        ),
+        max_parser_memory_bytes=_bounded_integer(
+            table, section, "max_parser_memory_bytes",
+            1_073_741_824, (268_435_456, 4_294_967_296),
+        ),
+        packet_order_sampling=packet_order_sampling,
+        packet_sample_packets=_bounded_integer(
+            table, section, "packet_sample_packets", 50_000, (1_000, 100_000)
+        ),
+        interleave_skew_threshold_seconds=_bounded_integer(
+            table, section, "interleave_skew_threshold_seconds", 30, (5, 600)
+        ),
+        subtitle_max_bytes=_bounded_integer(
+            table, section, "subtitle_max_bytes", 8_388_608, (65_536, 67_108_864)
+        ),
+        large_file_bytes=_bounded_integer(
+            table, section, "large_file_bytes",
+            21_474_836_480, (1_073_741_824, 1_099_511_627_776),
+        ),
+        high_bitrate_bits_per_second=_bounded_integer(
+            table, section, "high_bitrate_bits_per_second",
+            40_000_000, (1_000_000, 500_000_000),
+        ),
+        subtitle_runtime_tolerance_seconds=_bounded_integer(
+            table, section, "subtitle_runtime_tolerance_seconds", 30, (0, 300)
+        ),
+    )
+
+
 def _audiovisual_analysis(value: object) -> AudiovisualAnalysisConfig:
     if value is None:
         return AudiovisualAnalysisConfig()
@@ -113,7 +157,9 @@ def _audiovisual_analysis(value: object) -> AudiovisualAnalysisConfig:
         raise ConfigError("audiovisual_analysis must be a TOML table")
     allowed = {
         "enabled", "parser_timeout_seconds", "max_parser_output_bytes",
-        "max_parser_memory_bytes", "subtitle_max_bytes", "large_file_bytes",
+        "max_parser_memory_bytes", "packet_order_sampling",
+        "packet_sample_packets", "interleave_skew_threshold_seconds",
+        "subtitle_max_bytes", "large_file_bytes",
         "high_bitrate_bits_per_second", "subtitle_runtime_tolerance_seconds",
     }
     unknown = set(value) - allowed
@@ -122,36 +168,12 @@ def _audiovisual_analysis(value: object) -> AudiovisualAnalysisConfig:
     enabled = value.get("enabled", True)
     if not isinstance(enabled, bool):
         raise ConfigError("audiovisual_analysis.enabled must be true or false")
-    return AudiovisualAnalysisConfig(
-        enabled=enabled,
-        parser_timeout_seconds=_bounded_integer(
-            value, "audiovisual_analysis", "parser_timeout_seconds", 30, (1, 120)
-        ),
-        max_parser_output_bytes=_bounded_integer(
-            value, "audiovisual_analysis", "max_parser_output_bytes",
-            4_194_304, (65_536, 16_777_216),
-        ),
-        max_parser_memory_bytes=_bounded_integer(
-            value, "audiovisual_analysis", "max_parser_memory_bytes",
-            1_073_741_824, (268_435_456, 4_294_967_296),
-        ),
-        subtitle_max_bytes=_bounded_integer(
-            value, "audiovisual_analysis", "subtitle_max_bytes",
-            8_388_608, (65_536, 67_108_864),
-        ),
-        large_file_bytes=_bounded_integer(
-            value, "audiovisual_analysis", "large_file_bytes",
-            21_474_836_480, (1_073_741_824, 1_099_511_627_776),
-        ),
-        high_bitrate_bits_per_second=_bounded_integer(
-            value, "audiovisual_analysis", "high_bitrate_bits_per_second",
-            40_000_000, (1_000_000, 500_000_000),
-        ),
-        subtitle_runtime_tolerance_seconds=_bounded_integer(
-            value, "audiovisual_analysis", "subtitle_runtime_tolerance_seconds",
-            30, (0, 300),
-        ),
-    )
+    packet_order_sampling = value.get("packet_order_sampling", True)
+    if not isinstance(packet_order_sampling, bool):
+        raise ConfigError(
+            "audiovisual_analysis.packet_order_sampling must be true or false"
+        )
+    return _audiovisual_config(value, enabled, packet_order_sampling)
 
 
 def _book_analysis(value: object) -> BookAnalysisConfig:
