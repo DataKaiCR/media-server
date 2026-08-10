@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 import time
@@ -38,8 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.runtime_seconds is not None and args.runtime_seconds <= 0:
-        raise SystemExit("--runtime-seconds must be positive")
+    if args.runtime_seconds is not None and (
+        not math.isfinite(args.runtime_seconds) or args.runtime_seconds <= 0
+    ):
+        raise SystemExit("--runtime-seconds must be finite and positive")
     if args.retries <= 0:
         raise SystemExit("--retries must be positive")
 

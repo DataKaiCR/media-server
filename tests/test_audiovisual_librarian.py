@@ -94,6 +94,7 @@ class AudiovisualTemporaryTest(unittest.TestCase):
             "exclude_globs = []\n",
             encoding="utf-8",
         )
+        path.chmod(0o600)
         return path
 
 
@@ -211,6 +212,84 @@ class AudiovisualInspectionTest(AudiovisualTemporaryTest):
         ):
             _, findings = probe_media(movie, ".mkv", 100, AudiovisualAnalysisConfig())
         self.assertIn("video-stream-missing", {item.code for item in findings})
+
+    def test_every_ffprobe_failure_is_sanitized_evidence(self) -> None:
+        movie = self.media / "movie.mkv"
+        movie.write_bytes(MATROSKA)
+        cases = (
+            (
+                BoundedProcessResult(0, b"", b"PRIVATE", output_limited=True),
+                "media-probe-output-limit",
+            ),
+            (
+                BoundedProcessResult(None, b"", b"PRIVATE", unavailable=True),
+                "media-probe-unavailable",
+            ),
+            (
+                BoundedProcessResult(1, b"", b"PRIVATE"),
+                "media-container-invalid",
+            ),
+            (
+                BoundedProcessResult(0, b"\xff", b"PRIVATE"),
+                "media-probe-invalid-output",
+            ),
+            (
+                BoundedProcessResult(0, b"[]", b"PRIVATE"),
+                "media-probe-invalid-output",
+            ),
+        )
+        for result, expected_code in cases:
+            with self.subTest(code=expected_code), patch(
+                "digital_librarian.audiovisual.shutil.which",
+                return_value="ffprobe",
+            ), patch(
+                "digital_librarian.audiovisual._probe_result",
+                return_value=result,
+            ):
+                metadata, findings = probe_media(
+                    movie, ".mkv", 100, AudiovisualAnalysisConfig()
+                )
+                self.assertEqual(metadata, {})
+                self.assertEqual([finding.code for finding in findings], [expected_code])
+                self.assertNotIn(
+                    "PRIVATE", json.dumps([finding.to_dict() for finding in findings])
+                )
+
+    def test_ffprobe_rejects_nonfinite_and_fractional_numeric_fields(self) -> None:
+        movie = self.media / "movie.mkv"
+        movie.write_bytes(MATROSKA)
+        payload = {
+            "format": {
+                "format_name": "matroska",
+                "duration": True,
+                "bit_rate": float("inf"),
+            },
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1920.5,
+                    "height": 1080,
+                }
+            ],
+        }
+        with patch(
+            "digital_librarian.audiovisual.shutil.which", return_value="ffprobe"
+        ), patch(
+            "digital_librarian.audiovisual._probe_result",
+            return_value=BoundedProcessResult(
+                0, json.dumps(payload).encode("utf-8"), b""
+            ),
+        ):
+            metadata, findings = probe_media(
+                movie, ".mkv", 100, AudiovisualAnalysisConfig()
+            )
+        self.assertIsNone(metadata["duration_seconds"])
+        self.assertIsNone(metadata["bit_rate_bits_per_second"])
+        self.assertIsNone(metadata["streams"][0]["width"])
+        codes = {finding.code for finding in findings}
+        self.assertIn("media-duration-missing", codes)
+        self.assertIn("video-dimensions-invalid", codes)
 
     def test_subtitle_integrity_and_generated_provenance_persist_no_dialogue(self) -> None:
         subtitle = self.media / "movie.es-419.srt"

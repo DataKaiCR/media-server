@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import statistics
 import tempfile
 from typing import Any
@@ -16,6 +17,18 @@ from .config import EvidenceConfig, TierConfig
 
 
 SCHEMA = "media-server.seeding-evidence/v1"
+_REPORT_NAME_RE = re.compile(
+    r"^seeding-evidence-\d{8}T\d{6}\.\d{6}Z\.json$"
+)
+_VERSION_RE = re.compile(r"^[A-Za-z0-9._+-]{1,64}$")
+_CONNECTION_STATES = {"connected", "firewalled", "disconnected"}
+_TORRENT_STATES = {
+    "allocating", "checkingDL", "checkingResumeData", "checkingUP",
+    "downloading", "error", "forcedDL", "forcedMetaDL", "forcedUP",
+    "metaDL", "missingFiles", "moving", "pausedDL", "pausedUP",
+    "queuedDL", "queuedUP", "stalledDL", "stalledUP", "unknown",
+    "uploading",
+}
 
 
 def _integer(value: object, default: int = 0) -> int:
@@ -23,7 +36,7 @@ def _integer(value: object, default: int = 0) -> int:
         return default
     try:
         result = int(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return default
     return max(0, result)
 
@@ -33,7 +46,7 @@ def _known_nonnegative_integer(value: object) -> int | None:
         return None
     try:
         result = int(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return None
     return result if result >= 0 else None
 
@@ -119,11 +132,23 @@ def _port_alignment(config: EvidenceConfig, preferences: dict[str, Any]) -> dict
 
 
 def previous_report(report_dir: Path) -> dict[str, str] | None:
-    paths = sorted(report_dir.glob("seeding-evidence-*.json")) if report_dir.is_dir() else []
+    candidates = (
+        report_dir.glob("seeding-evidence-*.json")
+        if report_dir.is_dir() else ()
+    )
+    paths = sorted(
+        path for path in candidates
+        if _REPORT_NAME_RE.fullmatch(path.name)
+        and not path.is_symlink()
+        and path.is_file()
+    )
     if not paths:
         return None
     path = paths[-1]
-    return {"name": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    return {
+        "name": path.name,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
 
 
 def _new_aggregate(config: EvidenceConfig) -> dict[str, Any]:
@@ -161,7 +186,8 @@ def _record_torrent(
     aggregate["seed_times"].append(seed_days)
     if _ratio(torrent.get("progress")) >= 1:
         aggregate["complete_payload"] += payload
-    state = torrent.get("state") if isinstance(torrent.get("state"), str) else "unknown"
+    raw_state = torrent.get("state")
+    state = raw_state if raw_state in _TORRENT_STATES else "unknown"
     aggregate["states"][state] = aggregate["states"].get(state, 0) + 1
     aggregate["ratio_buckets"][_ratio_bucket(ratio)] += 1
     aggregate["time_buckets"][_seed_time_bucket(seed_days)] += 1
@@ -219,13 +245,51 @@ def _summary(torrent_count: int, aggregate: dict[str, Any], server_state: dict[s
         "client_alltime_downloaded_bytes": alltime_downloaded,
         "client_alltime_ratio": round(alltime_ratio, 4) if alltime_ratio is not None else None,
         "median_torrent_ratio": round(statistics.median(aggregate["ratios"]), 4) if aggregate["ratios"] else None,
-        "median_seed_time_days": round(statistics.median(aggregate["seed_times"]), 4) if aggregate["seed_times"] else None,
+        "median_seed_time_days": (
+            round(statistics.median(aggregate["seed_times"]), 4)
+            if aggregate["seed_times"] else None
+        ),
         "state_counts": dict(sorted(aggregate["states"].items())),
         "ratio_buckets": aggregate["ratio_buckets"],
         "seed_time_buckets": aggregate["time_buckets"],
         "low_swarm_evidence_count": aggregate["low_swarm"],
         "unclassified_torrent_count": aggregate["unclassified"],
         "conflicting_policy_tag_count": aggregate["conflicting"],
+    }
+
+
+def _client_evidence(
+    config: EvidenceConfig,
+    snapshot: dict[str, Any],
+    server_state: dict[str, Any],
+    preferences: dict[str, Any],
+) -> dict[str, Any]:
+    version = snapshot.get("version")
+    safe_version = (
+        version if isinstance(version, str) and _VERSION_RE.fullmatch(version)
+        else "unknown"
+    )
+    connection = server_state.get("connection_status")
+    safe_connection = (
+        connection if connection in _CONNECTION_STATES else "unknown"
+    )
+    upload_limit = _integer(preferences.get("up_limit"))
+    alternative_upload_limit = _integer(preferences.get("alt_up_limit"))
+    return {
+        "name": "qBittorrent",
+        "version": safe_version,
+        "connection_status": safe_connection,
+        "current_upload_rate_bytes_per_second": _integer(
+            server_state.get("up_info_speed")
+        ),
+        "configured_upload_limit_bytes_per_second": upload_limit or None,
+        "configured_alternative_upload_limit_bytes_per_second": (
+            alternative_upload_limit or None
+        ),
+        "alternative_speed_limits_active": (
+            server_state.get("use_alt_speed_limits") is True
+        ),
+        "port_forwarding": _port_alignment(config, preferences),
     }
 
 
@@ -240,24 +304,15 @@ def build_report(
     preferences = snapshot["preferences"]
     server_state = snapshot["server_state"]
     aggregate = _aggregate_torrents(config, torrents)
-    upload_limit = _integer(preferences.get("up_limit"))
-    alternative_upload_limit = _integer(preferences.get("alt_up_limit"))
     return {
         "schema": SCHEMA,
         "generated_at": generated_at.astimezone(dt.timezone.utc).isoformat(),
         "mode": "report-only",
         "config_sha256": config.config_sha256,
         "previous_report": previous,
-        "client": {
-            "name": "qBittorrent",
-            "version": snapshot["version"],
-            "connection_status": server_state.get("connection_status"),
-            "current_upload_rate_bytes_per_second": _integer(server_state.get("up_info_speed")),
-            "configured_upload_limit_bytes_per_second": upload_limit or None,
-            "configured_alternative_upload_limit_bytes_per_second": alternative_upload_limit or None,
-            "alternative_speed_limits_active": bool(server_state.get("use_alt_speed_limits")),
-            "port_forwarding": _port_alignment(config, preferences),
-        },
+        "client": _client_evidence(
+            config, snapshot, server_state, preferences
+        ),
         "summary": _summary(len(torrents), aggregate, server_state),
         "tiers": [aggregate["tiers"][tier.tier_id] for tier in config.tiers],
         "privacy": {

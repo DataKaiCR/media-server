@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 import stat
@@ -236,12 +237,34 @@ def _photo_analysis(value: object) -> PhotoAnalysisConfig:
     )
 
 
-def load_config(path: Path) -> LibrarianConfig:
+def _private_document(path: Path) -> dict[str, object]:
+    if not path.is_absolute():
+        raise ConfigError("Librarian configuration path must be absolute")
+    if path.is_symlink() or not path.is_file():
+        raise ConfigError(
+            "Librarian configuration must be a regular non-symlink file"
+        )
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise ConfigError("Librarian configuration must be mode 0600 or stricter")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        with path.open("rb") as handle:
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as handle:
             raw = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise ConfigError("cannot read Librarian configuration") from error
+    allowed = {
+        "version", "report_dir", "audiovisual_analysis", "book_analysis",
+        "photo_analysis", "collections",
+    }
+    unknown = set(raw) - allowed
+    if unknown:
+        raise ConfigError(f"unknown top-level setting: {sorted(unknown)[0]}")
+    return raw
+
+
+def load_config(path: Path) -> LibrarianConfig:
+    raw = _private_document(path)
     if raw.get("version") != 1:
         raise ConfigError("configuration version must be 1")
     report_dir = _absolute_directory(raw.get("report_dir"), "report_dir", False)
@@ -257,6 +280,14 @@ def load_config(path: Path) -> LibrarianConfig:
     for row in rows:
         if not isinstance(row, dict):
             raise ConfigError("each collection must be a TOML table")
+        collection_allowed = {
+            "id", "kind", "role", "root", "exclude_globs", "media_layout",
+        }
+        collection_unknown = set(row) - collection_allowed
+        if collection_unknown:
+            raise ConfigError(
+                f"unknown collection setting: {sorted(collection_unknown)[0]}"
+            )
         collection_id = row.get("id")
         if not isinstance(collection_id, str) or not COLLECTION_ID_RE.fullmatch(collection_id):
             raise ConfigError("collection id must be a lowercase public-safe identifier")

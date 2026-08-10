@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import hashlib
+import ipaddress
 import json
+import math
 import time
-from typing import Callable
+from typing import Callable, Protocol
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from .errors import TranslationError, ValidationError
@@ -37,6 +40,7 @@ as [portazo]). Do not add explanations, censorship, timestamps, or cue
 identifiers to translated text. Return only the requested JSON with exactly one
 non-empty translation for every input id, in the same order."""
 PROMPT_SHA256 = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+MAX_OLLAMA_RESPONSE_BYTES = 8_388_608
 
 
 @dataclass(frozen=True)
@@ -86,12 +90,58 @@ def cue_payload(cue: Cue) -> dict[str, object]:
     return {"id": cue.index, "text": protected}
 
 
+def _loopback_origin(value: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ValueError("Ollama URL contains an invalid port") from error
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Ollama URL must be a loopback HTTP(S) origin")
+    try:
+        loopback = parsed.hostname == "localhost" or ipaddress.ip_address(
+            parsed.hostname
+        ).is_loopback
+    except ValueError:
+        loopback = False
+    if not loopback:
+        raise ValueError("Ollama URL must use a loopback host")
+    return value.rstrip("/")
+
+
+class _ReadableResponse(Protocol):
+    def read(self, amount: int = -1) -> bytes: ...
+
+
+def _response_json(response: _ReadableResponse) -> object:
+    raw = response.read(MAX_OLLAMA_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_OLLAMA_RESPONSE_BYTES:
+        raise TranslationError("Ollama response exceeded the safety limit")
+    try:
+        return json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise TranslationError("Ollama returned invalid JSON") from error
+
+
 class OllamaClient:
     def __init__(self, base_url: str, timeout: float = 600) -> None:
-        self.base_url = base_url.rstrip("/")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or not 0 < timeout <= 3600
+        ):
+            raise ValueError("Ollama timeout must be finite and between 0 and 3600")
+        self.base_url = _loopback_origin(base_url)
         self.timeout = timeout
-        if not self.base_url.startswith(("http://", "https://")):
-            raise ValueError("Ollama URL must use HTTP or HTTPS")
 
     def _request(self, endpoint: str, payload: dict[str, object]) -> dict[str, object]:
         request = urllib.request.Request(
@@ -102,8 +152,8 @@ class OllamaClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                result = json.load(response)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+                result = _response_json(response)
+        except (urllib.error.URLError, TimeoutError) as error:
             raise TranslationError(f"Ollama request failed: {type(error).__name__}") from error
         if not isinstance(result, dict):
             raise TranslationError("Ollama returned an invalid response envelope")
@@ -115,14 +165,23 @@ class OllamaClient:
         request = urllib.request.Request(self.base_url + "/api/tags")
         try:
             with urllib.request.urlopen(request, timeout=min(self.timeout, 30)) as response:
-                result = json.load(response)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+                result = _response_json(response)
+        except (urllib.error.URLError, TimeoutError) as error:
             raise TranslationError("cannot query installed Ollama models") from error
-        for row in result.get("models", []):
+        if not isinstance(result, dict) or not isinstance(result.get("models"), list):
+            raise TranslationError("Ollama returned an invalid model inventory")
+        for row in result["models"]:
+            if not isinstance(row, dict):
+                raise TranslationError("Ollama returned an invalid model inventory")
             if row.get("name") == model or row.get("model") == model:
                 digest = row.get("digest")
-                if isinstance(digest, str) and digest:
+                if (
+                    isinstance(digest, str)
+                    and 1 <= len(digest) <= 128
+                    and all(char.isalnum() or char in ":._+-" for char in digest)
+                ):
                     return digest
+                raise TranslationError("Ollama returned an invalid model digest")
         raise TranslationError(f"Ollama model is not installed: {model}")
 
     def translate_chunk(
@@ -200,6 +259,8 @@ def translate_cues(
     keep_alive: str,
     progress: Callable[[int, int], None] | None = None,
 ) -> tuple[list[Cue], list[dict[str, object]]]:
+    if retries <= 0 or retry_delay < 0 or not math.isfinite(retry_delay):
+        raise ValueError("retry settings must be finite and nonnegative")
     validate_source_language(cues)
     chunks = make_chunks(cues, max_cues, max_chars, context_cues)
     translated: list[Cue] = []

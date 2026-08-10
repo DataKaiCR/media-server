@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import re
 from typing import Iterable
@@ -10,9 +11,12 @@ from typing import Iterable
 from .errors import ValidationError
 
 
+MAX_SRT_BYTES = 16_777_216
+MAX_SRT_CUES = 100_000
+MAX_CUE_TEXT_CHARS = 10_000
 TIMESTAMP_RE = re.compile(
-    r"^(?P<start>\d{2,}:\d{2}:\d{2},\d{3}) --> "
-    r"(?P<end>\d{2,}:\d{2}:\d{2},\d{3})(?P<settings>(?: .*)?)$"
+    r"^(?P<start>\d{2,6}:\d{2}:\d{2},\d{3}) --> "
+    r"(?P<end>\d{2,6}:\d{2}:\d{2},\d{3})(?P<settings>(?: .*)?)$"
 )
 
 
@@ -34,9 +38,11 @@ def timestamp_ms(value: str) -> int:
     return ((fields[0] * 60 + fields[1]) * 60 + fields[2]) * 1000 + fields[3]
 
 
-def parse_srt_bytes(raw: bytes, runtime_seconds: float | None = None) -> list[Cue]:
+def _subtitle_text(raw: bytes) -> str:
     if not raw:
         raise ValidationError("subtitle is empty")
+    if len(raw) > MAX_SRT_BYTES:
+        raise ValidationError("subtitle exceeds the safe input size")
     if b"\x00" in raw:
         raise ValidationError("subtitle contains NUL bytes")
     try:
@@ -46,20 +52,39 @@ def parse_srt_bytes(raw: bytes, runtime_seconds: float | None = None) -> list[Cu
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not text.strip():
         raise ValidationError("subtitle has no content")
+    return text
 
+
+def _runtime_milliseconds(runtime_seconds: float | None) -> int | None:
+    if runtime_seconds is None:
+        return None
+    if (
+        isinstance(runtime_seconds, bool)
+        or not isinstance(runtime_seconds, (int, float))
+        or not math.isfinite(runtime_seconds)
+        or runtime_seconds <= 0
+    ):
+        raise ValidationError("media runtime must be finite and positive")
+    return round(runtime_seconds * 1000)
+
+
+def parse_srt_bytes(raw: bytes, runtime_seconds: float | None = None) -> list[Cue]:
+    text = _subtitle_text(raw)
+    runtime_ms = _runtime_milliseconds(runtime_seconds)
     blocks = re.split(r"\n[ \t]*\n", text)
+    if len(blocks) > MAX_SRT_CUES:
+        raise ValidationError("subtitle exceeds the safe cue count")
     cues: list[Cue] = []
     seen_indexes: set[int] = set()
     seen_timings: set[tuple[int, int]] = set()
     previous: Cue | None = None
-    runtime_ms = round(runtime_seconds * 1000) if runtime_seconds is not None else None
 
     for position, block in enumerate(blocks, start=1):
         lines = block.split("\n")
         if len(lines) < 3:
             raise ValidationError(f"cue block {position} is incomplete")
-        if not re.fullmatch(r"\d+", lines[0]):
-            raise ValidationError(f"cue block {position} has a non-numeric index")
+        if not re.fullmatch(r"\d{1,9}", lines[0]):
+            raise ValidationError(f"cue block {position} has an invalid index")
         index = int(lines[0])
         if index <= 0 or index in seen_indexes:
             raise ValidationError(f"cue index {index} is invalid or duplicated")
@@ -76,6 +101,8 @@ def parse_srt_bytes(raw: bytes, runtime_seconds: float | None = None) -> list[Cu
         content = "\n".join(lines[2:]).strip()
         if not content:
             raise ValidationError(f"cue {index} has empty text")
+        if len(content) > MAX_CUE_TEXT_CHARS:
+            raise ValidationError(f"cue {index} exceeds the safe text size")
         cue = Cue(index, lines[1], start_ms, end_ms, content)
         if previous is not None:
             if cue.index <= previous.index:
@@ -100,8 +127,11 @@ def parse_srt_bytes(raw: bytes, runtime_seconds: float | None = None) -> list[Cu
 
 
 def parse_srt(path: Path, runtime_seconds: float | None = None) -> list[Cue]:
+    if path.is_symlink():
+        raise ValidationError("source subtitle must not be a symlink")
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_SRT_BYTES + 1)
     except OSError as error:
         raise ValidationError(f"cannot read source subtitle: {error.strerror}") from error
     return parse_srt_bytes(raw, runtime_seconds)

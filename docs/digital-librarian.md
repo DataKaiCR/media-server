@@ -110,8 +110,10 @@ exclude_globs = []
 `role` defaults to `library`. The `intake` role is limited to book collections,
 requires its root to be mode `0700` or stricter, and hashes every regular file,
 not only same-size duplicate candidates. Parser
-settings have enforced minimum and maximum values; unknown settings are rejected.
-Audiovisual collections accept `movies`, `series`, or conservative `mixed`
+settings have enforced minimum and maximum values; unknown top-level, analysis,
+and collection settings are rejected. The loader requires an absolute, regular,
+non-symlink configuration file with mode `0600` or stricter. Audiovisual
+collections accept `movies`, `series`, or conservative `mixed`
 layout evidence. Prefer separate movie and series roots when the filesystem
 already provides that boundary. Protect the configuration even though it
 contains no credentials because collection paths are private inventory

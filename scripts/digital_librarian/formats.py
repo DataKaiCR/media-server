@@ -197,6 +197,18 @@ def image_dimensions(header: bytes, detected: str | None) -> tuple[int, int] | N
     return None
 
 
+def _epub_mimetype(
+    archive: zipfile.ZipFile, names: set[str]
+) -> bytes:
+    if "mimetype" not in names:
+        return b""
+    info = archive.getinfo("mimetype")
+    if info.file_size > 256:
+        return b""
+    with archive.open(info) as handle:
+        return handle.read(257)
+
+
 def inspect_zip(path: Path, extension: str) -> tuple[str, dict[str, object], list[Finding]]:
     findings: list[Finding] = []
     try:
@@ -205,7 +217,7 @@ def inspect_zip(path: Path, extension: str) -> tuple[str, dict[str, object], lis
             count = len(names)
             detected = "zip"
             if extension == ".epub":
-                mimetype = archive.read("mimetype") if "mimetype" in names else b""
+                mimetype = _epub_mimetype(archive, names)
                 if mimetype == b"application/epub+zip" and "META-INF/container.xml" in names:
                     detected = "epub"
                 else:

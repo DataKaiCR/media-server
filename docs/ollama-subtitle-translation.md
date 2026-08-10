@@ -36,7 +36,10 @@ license terms:
 ollama pull translategemma:12b
 ```
 
-Do not expose an unauthenticated Ollama API to an untrusted network.
+Do not expose an unauthenticated Ollama API to an untrusted network. The
+translation client accepts only a loopback HTTP(S) origin without credentials,
+path, query, or fragment, and enforces finite request timeouts and an 8 MiB
+response ceiling.
 
 ## Translation workflow
 
@@ -72,12 +75,14 @@ targets.
 
 ## Input validation
 
-The parser requires strict UTF-8 SRT and rejects:
+The parser reads at most 16 MiB, caps cue count and per-cue text, requires strict
+UTF-8 SRT, and rejects:
 
-- empty files, NUL bytes, malformed blocks, and non-numeric cue identifiers;
+- empty or oversized files, NUL bytes, malformed blocks, and invalid or
+  pathologically large cue identifiers;
 - duplicated or regressing identifiers and timestamp pairs;
 - invalid timestamp components, zero/negative durations, and overlaps;
-- cues beyond the supplied media runtime;
+- cues beyond a finite, positive supplied media runtime;
 - feature-length sources that end before the media midpoint;
 - sources that do not appear to be English.
 
@@ -93,9 +98,12 @@ on either side are supplied as read-only context. Context is never included in
 the returned cue set.
 
 Ollama receives a JSON schema requiring one ordered `{id, text}` row for every
-cue. Temperature is zero and retries use a fixed, incrementing seed. A failed
+cue. Model inventories and response envelopes are size-bounded and strictly
+validated before any values are consumed or persisted. Temperature is zero and
+retries use a fixed, incrementing seed. A failed
 attempt supplies only its validation reason to the next deterministic attempt.
-After three failures, the complete operation stops without publication.
+After three failures, the complete operation stops without publication. Retry
+counts and delays are validated before any model request.
 
 Fully outer formatting tags are removed before inference and restored exactly.
 Detected proper names are replaced with stable placeholders and restored after
