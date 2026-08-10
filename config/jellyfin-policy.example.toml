@@ -1,0 +1,16 @@
+version = 1
+base_url = "http://127.0.0.1:8096"
+api_key_file = "/srv/private-state/jellyfin/policy-api-key"
+backup_dir = "/srv/private-state/jellyfin/policy-backups"
+
+[[users]]
+name = "household-viewer-one"
+role = "household"
+
+[[users]]
+name = "household-viewer-two"
+role = "household"
+
+[[users]]
+name = "restricted-viewer"
+role = "restricted"
