@@ -167,11 +167,24 @@ def _measure_audio_skew(
         {
             "stream_index": index,
             "sampled_packets": row.sampled_packets,
-            "maximum_lag_seconds": round(row.maximum_lag_seconds, 3),
-            "maximum_lead_seconds": round(row.maximum_lead_seconds, 3),
+            "maximum_lag_seconds": row.maximum_lag_seconds,
+            "maximum_lead_seconds": row.maximum_lead_seconds,
         }
         for index, row in sorted(stats.items())
         if row.sampled_packets
+    ]
+
+
+def _render_audio_stats(
+    rows: list[dict[str, int | float]],
+) -> list[dict[str, int | float]]:
+    return [
+        {
+            **row,
+            "maximum_lag_seconds": round(float(row["maximum_lag_seconds"]), 3),
+            "maximum_lead_seconds": round(float(row["maximum_lead_seconds"]), 3),
+        }
+        for row in rows
     ]
 
 
@@ -204,6 +217,7 @@ def _packet_order_evidence(
         >= threshold
         for row in per_stream
     )
+    rendered_streams = _render_audio_stats(per_stream)
     return {
         "analysis_complete": analysis_complete,
         "packet_limit": settings.packet_sample_packets,
@@ -218,7 +232,7 @@ def _packet_order_evidence(
         "maximum_audio_lag_seconds": round(maximum_lag, 3),
         "maximum_audio_lead_seconds": round(maximum_lead, 3),
         "threshold_crossed_stream_count": affected,
-        "audio_streams": per_stream,
+        "audio_streams": rendered_streams,
         "automatic_action": False,
     }
 

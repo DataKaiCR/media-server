@@ -120,13 +120,14 @@ where possible, post-change verified, audited, and rolled back on failure.
 
 - [x] MS-TEST-1 — Iron-Grade harden the existing safety-critical suites.
   Audited the earlier Librarian, seeding-evidence, generated-subtitle marker,
-  and translation suites against the canonical adversarial protocol. The 91-test
-  suite now covers exact boundaries, malformed and oversized inputs, nested
-  response shapes, symlink refusal, privacy reduction, failure rollback, and
-  atomic publication using temporary filesystems, xattrs, subprocesses, and a
-  real loopback HTTP server. Source-inclusive coverage reached 82.26% of lines
-  and 72.64% of branches; 21 of 21 non-equivalent representative mutations were
-  killed. Falsification exposed and fixed private-manifest mode/rollback,
+  and translation suites against the canonical adversarial protocol. The
+  integrated 106-test suite now covers exact boundaries, malformed and oversized
+  inputs, packet ordering, nested response shapes, symlink refusal, privacy
+  reduction, failure rollback, and atomic publication using temporary
+  filesystems, xattrs, subprocesses, real tools, and a real loopback HTTP server.
+  Source-inclusive coverage reached 83.08% of lines and 73.97% of branches; 28
+  of 28 non-equivalent representative mutations were killed. Falsification
+  exposed and fixed private-manifest mode/rollback,
   arbitrary API evidence leakage, malformed numeric/shape crashes, missing
   private Librarian configuration enforcement, unbounded EPUB mimetype reads,
   and incomplete subtitle/Ollama input and transport bounds. The existing
@@ -155,7 +156,8 @@ where possible, post-change verified, audited, and rolled back on failure.
   matrix covers the original delayed-audio shape, physical-order fallback,
   exact boundaries, timestamp regressions, malformed and oversized rows, every
   bounded-process failure, stream-selection traps, privacy, and real-tool
-  integration. Six representative injected regressions were killed; a private
+  integration. Seven representative injected regressions were killed, including
+  a sub-millisecond rounding error at the exact skew threshold; a private
   read-only pilot completed without findings or source metadata changes.
 
 ### [ ] MS-5 — Semantic library search

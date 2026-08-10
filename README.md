@@ -236,12 +236,13 @@ them. The core performs shallow format validation, exact duplicate hashing,
 filename collision and photo-sidecar checks, and atomic private JSON reporting
 with no proposed actions.
 
-The audiovisual module adds bounded local container/stream evidence, configurable
-size and bitrate review signals, conservative movie/series layout and possible
-redundant-encode groups, orphaned artwork/NFO and unmatched subtitle checks, external
-subtitle timing/runtime evidence, and generated-subtitle provenance validation.
-It persists neither subtitle dialogue nor raw ffprobe output and cannot transcode,
-tag, rename, replace, or delete media.
+The audiovisual module adds bounded local container/stream and physical
+packet-order evidence, configurable size and bitrate review signals,
+conservative movie/series layout and possible redundant-encode groups, orphaned
+artwork/NFO and unmatched subtitle checks, external subtitle timing/runtime
+evidence, and generated-subtitle provenance validation. It persists neither
+subtitle dialogue, raw ffprobe output, nor individual packet rows and cannot
+transcode, tag, rename, replace, or delete media.
 
 The books/documents module adds bounded PDF page and text-layer evidence, OCR
 recommendations without OCR execution, EPUB package and bibliographic checks,

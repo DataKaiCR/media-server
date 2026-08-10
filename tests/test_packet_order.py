@@ -152,7 +152,7 @@ class PacketOrderSkewFalsificationTest(PacketOrderTemporaryTest):
     def test_exact_threshold_crosses_but_value_below_it_does_not(self) -> None:
         output = packet_output(
             packet_line(0, 0, position=100),
-            packet_line(1, 29.999, position=200),
+            packet_line(1, 29.9996, position=200),
             packet_line(2, 30, position=210),
         )
 
