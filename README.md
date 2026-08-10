@@ -98,7 +98,9 @@ sudo /path/to/podman-compose --profile download up -d qbittorrent
 
 On a host where the opted-in download path must survive reboots, install the
 ordered systemd unit. It waits for Gluetun to become healthy before starting
-qBittorrent, preserving the VPN kill switch:
+qBittorrent, preserving the VPN kill switch. The generic Podman restart unit is
+a soft, ordered dependency so an unrelated container startup failure cannot
+block the VPN-gated download path:
 
 ```bash
 sudo install -D -m 0644 \

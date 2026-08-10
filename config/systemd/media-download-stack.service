@@ -1,9 +1,8 @@
 [Unit]
 Description=VPN-gated media download stack
 Documentation=file:///var/home/datakai/projects/media-server/README.md
-Wants=network-online.target
+Wants=network-online.target podman-restart.service
 After=network-online.target podman-restart.service
-Requires=podman-restart.service
 
 [Service]
 Type=oneshot
