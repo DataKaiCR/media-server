@@ -17,7 +17,7 @@ from .config import AudiovisualAnalysisConfig, BookAnalysisConfig, PhotoAnalysis
 from .model import CollectionReport
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def fsync_directory(path: Path) -> None:
@@ -59,6 +59,7 @@ def report_document(
             "decoded_photo_pixels_persisted": False,
             "subtitle_text_persisted": False,
             "raw_ffprobe_output_persisted": False,
+            "raw_packet_output_persisted": False,
         },
         "summary": {
             "collection_count": len(reports),

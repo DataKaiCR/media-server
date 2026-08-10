@@ -30,8 +30,6 @@ from digital_librarian.scanner import audit_collection
 
 MATROSKA = b"\x1aE\xdf\xa3" + b"\x00" * 128
 SRT = b"1\n00:00:01,000 --> 00:00:02,000\nPrivate dialogue\n"
-
-
 def media_metadata(duration: float = 3600, codec: str = "h264") -> dict:
     return {
         "audiovisual": {
@@ -81,6 +79,9 @@ class AudiovisualTemporaryTest(unittest.TestCase):
             "parser_timeout_seconds = 12\n"
             "max_parser_output_bytes = 131072\n"
             "max_parser_memory_bytes = 536870912\n"
+            "packet_order_sampling = true\n"
+            "packet_sample_packets = 50000\n"
+            "interleave_skew_threshold_seconds = 30\n"
             "subtitle_max_bytes = 1048576\n"
             "large_file_bytes = 10737418240\n"
             "high_bitrate_bits_per_second = 30000000\n"
@@ -103,9 +104,81 @@ class AudiovisualConfigTest(AudiovisualTemporaryTest):
         config = load_config(self.write_config())
         self.assertEqual(config.collections[0].media_layout, "movies")
         self.assertEqual(config.audiovisual_analysis.parser_timeout_seconds, 12)
+        self.assertTrue(config.audiovisual_analysis.packet_order_sampling)
+        self.assertEqual(config.audiovisual_analysis.packet_sample_packets, 50_000)
+        self.assertEqual(
+            config.audiovisual_analysis.interleave_skew_threshold_seconds, 30
+        )
         self.assertEqual(config.audiovisual_analysis.subtitle_max_bytes, 1_048_576)
         self.assertEqual(config.audiovisual_analysis.large_file_bytes, 10_737_418_240)
         self.assertEqual(config.audiovisual_analysis.subtitle_runtime_tolerance_seconds, 8)
+
+    def test_packet_config_defaults_and_exact_boundaries(self) -> None:
+        default_path = self.write_config()
+        default_text = default_path.read_text(encoding="utf-8")
+        for line in (
+            "packet_order_sampling = true\n",
+            "packet_sample_packets = 50000\n",
+            "interleave_skew_threshold_seconds = 30\n",
+        ):
+            default_text = default_text.replace(line, "")
+        default_path.write_text(default_text, encoding="utf-8")
+        defaults = load_config(default_path).audiovisual_analysis
+        self.assertTrue(defaults.packet_order_sampling)
+        self.assertEqual(defaults.packet_sample_packets, 50_000)
+        self.assertEqual(defaults.interleave_skew_threshold_seconds, 30)
+
+        valid_bounds = (
+            ("packet_sample_packets = 50000", "packet_sample_packets = 1000", 1_000),
+            ("packet_sample_packets = 50000", "packet_sample_packets = 100000", 100_000),
+            (
+                "interleave_skew_threshold_seconds = 30",
+                "interleave_skew_threshold_seconds = 5",
+                5,
+            ),
+            (
+                "interleave_skew_threshold_seconds = 30",
+                "interleave_skew_threshold_seconds = 600",
+                600,
+            ),
+        )
+        for original, replacement, expected in valid_bounds:
+            with self.subTest(replacement=replacement):
+                path = self.write_config()
+                path.write_text(
+                    path.read_text(encoding="utf-8").replace(original, replacement),
+                    encoding="utf-8",
+                )
+                settings = load_config(path).audiovisual_analysis
+                field = replacement.split(" =")[0]
+                self.assertEqual(getattr(settings, field), expected)
+
+    def test_packet_config_rejects_off_by_one_and_wrong_types(self) -> None:
+        invalid_settings = (
+            ("packet_order_sampling = true", 'packet_order_sampling = "yes"'),
+            ("packet_sample_packets = 50000", "packet_sample_packets = 999"),
+            ("packet_sample_packets = 50000", "packet_sample_packets = 100001"),
+            ("packet_sample_packets = 50000", "packet_sample_packets = true"),
+            (
+                "interleave_skew_threshold_seconds = 30",
+                "interleave_skew_threshold_seconds = 4",
+            ),
+            (
+                "interleave_skew_threshold_seconds = 30",
+                "interleave_skew_threshold_seconds = 601",
+            ),
+        )
+        for original, replacement in invalid_settings:
+            with self.subTest(replacement=replacement):
+                invalid = self.write_config()
+                invalid.write_text(
+                    invalid.read_text(encoding="utf-8").replace(
+                        original, replacement
+                    ),
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ConfigError, original.split(" =")[0]):
+                    load_config(invalid)
 
     def test_rejects_invalid_or_nonmedia_layout_and_unsafe_bounds(self) -> None:
         with self.assertRaisesRegex(ConfigError, "mixed, movies, or series"):
@@ -156,16 +229,16 @@ class AudiovisualInspectionTest(AudiovisualTemporaryTest):
             },
             "streams": [
                 {
-                    "codec_type": "video", "codec_name": "hevc",
+                    "index": 0, "codec_type": "video", "codec_name": "hevc",
                     "width": 3840, "height": 2160, "pix_fmt": "yuv420p10le",
                     "r_frame_rate": "24000/1001", "tags": {"title": "PRIVATE"},
                 },
                 {
-                    "codec_type": "audio", "codec_name": "aac", "channels": 6,
+                    "index": 1, "codec_type": "audio", "codec_name": "aac", "channels": 6,
                     "channel_layout": "5.1", "tags": {"language": "spa"},
                 },
                 {
-                    "codec_type": "subtitle", "codec_name": "subrip",
+                    "index": 2, "codec_type": "subtitle", "codec_name": "subrip",
                     "tags": {"language": "eng", "title": "PRIVATE"},
                 },
             ],
@@ -173,6 +246,7 @@ class AudiovisualInspectionTest(AudiovisualTemporaryTest):
         }
         result = BoundedProcessResult(0, json.dumps(payload).encode(), b"")
         settings = AudiovisualAnalysisConfig(
+            packet_order_sampling=False,
             large_file_bytes=1024,
             high_bitrate_bits_per_second=40_000_000,
         )
@@ -464,10 +538,11 @@ class AudiovisualEndToEndTest(AudiovisualTemporaryTest):
         document = report_document(
             [report], "a" * 64, audiovisual_analysis=settings
         )
-        self.assertEqual(document["schema_version"], 4)
+        self.assertEqual(document["schema_version"], 5)
         self.assertEqual(document["proposed_actions"], [])
         self.assertFalse(document["analysis"]["subtitle_text_persisted"])
         self.assertFalse(document["analysis"]["raw_ffprobe_output_persisted"])
+        self.assertFalse(document["analysis"]["raw_packet_output_persisted"])
         for path, state in before.items():
             self.assertEqual(
                 (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns),

@@ -799,7 +799,7 @@ class ReportTest(TemporaryCollections):
         destination = self.reports / result["report_file"]
         document = json.loads(destination.read_text(encoding="utf-8"))
         self.assertEqual(result["mode"], "report-only")
-        self.assertEqual(document["schema_version"], 4)
+        self.assertEqual(document["schema_version"], 5)
         self.assertEqual(document["proposed_actions"], [])
         self.assertFalse(document["analysis"]["extracted_document_text_persisted"])
         self.assertFalse(document["analysis"]["decoded_photo_pixels_persisted"])
