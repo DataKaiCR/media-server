@@ -4,11 +4,11 @@ api_key_file = "/srv/private-state/jellyfin/policy-api-key"
 backup_dir = "/srv/private-state/jellyfin/policy-backups"
 
 [[users]]
-name = "household-viewer-one"
-role = "household"
+name = "household-guest"
+role = "guest"
 
 [[users]]
-name = "household-viewer-two"
+name = "household-viewer"
 role = "household"
 
 [[users]]

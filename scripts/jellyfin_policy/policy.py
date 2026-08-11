@@ -11,11 +11,14 @@ from .config import PolicyConfig
 
 
 _FOLDER_TYPES = {
+    "guest": frozenset({"movies", "tvshows", "music"}),
     "household": frozenset({"movies", "tvshows", "music", "books"}),
     "restricted": frozenset({"movies", "tvshows"}),
 }
 _BLOCKED_UNRATED = ["Movie", "Trailer", "Series"]
-_ITEM_ID_RE = re.compile(r"^[0-9a-fA-F-]{16,64}$")
+_ITEM_ID_RE = re.compile(
+    r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$"
+)
 
 
 class PolicyError(ValueError):

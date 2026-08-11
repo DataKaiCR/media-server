@@ -37,6 +37,7 @@ CLI_SPEC.loader.exec_module(CLI)
 ADMIN_ID = "a" * 32
 HOUSEHOLD_ID = "b" * 32
 RESTRICTED_ID = "c" * 32
+GUEST_ID = "5" * 32
 FOLDER_IDS = {
     "movies": "d" * 32,
     "tvshows": "e" * 32,
@@ -147,6 +148,14 @@ class ConfigTest(TemporaryTest):
         config = load_config(self.write_config())
         self.assertEqual(config.base_url, "http://127.0.0.1:8096")
         self.assertEqual([row.role for row in config.users], ["household", "restricted"])
+        guest = self.write_config()
+        guest.write_text(
+            guest.read_text(encoding="utf-8").replace(
+                'role = "household"', 'role = "guest"', 1
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(load_config(guest).users[0].role, "guest")
 
     def test_rejects_public_symlink_external_and_unknown_configuration(self) -> None:
         public = self.write_config(mode=0o644)
@@ -212,7 +221,7 @@ class ConfigTest(TemporaryTest):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ConfigError, "household or restricted"):
+        with self.assertRaisesRegex(ConfigError, "guest, household, or restricted"):
             load_config(bad_role)
 
 
@@ -245,6 +254,28 @@ class PolicyTest(TemporaryTest):
         self.assertEqual(child["MaxParentalRating"], 10)
         self.assertEqual(child["BlockUnratedItems"], ["Movie", "Trailer", "Series"])
 
+    def test_guest_can_use_music_but_not_books_without_parental_ceiling(self) -> None:
+        config = policy_config(self.root)
+        config = PolicyConfig(
+            config.base_url,
+            config.api_key_file,
+            config.backup_dir,
+            (*config.users, UserRule("private-guest", "guest")),
+        )
+        rows = users() + [
+            {"Id": GUEST_ID, "Name": "private-guest", "Policy": unsafe_policy()}
+        ]
+        plan = build_plan(config, rows, folders())
+        guest = next(row for row in plan if row.role == "guest")
+        self.assertEqual(
+            set(guest.desired["EnabledFolders"]),
+            {FOLDER_IDS["movies"], FOLDER_IDS["tvshows"], FOLDER_IDS["music"]},
+        )
+        self.assertNotIn(FOLDER_IDS["books"], guest.desired["EnabledFolders"])
+        self.assertIsNone(guest.desired["MaxParentalRating"])
+        self.assertEqual(guest.desired["BlockUnratedItems"], [])
+        self.assertEqual(public_summary(plan)["role_counts"]["guest"], 1)
+
     def test_allows_multiple_folders_per_type_but_rejects_duplicate_ids(self) -> None:
         rows = folders() + [{"CollectionType": "movies", "ItemId": "4" * 32}]
         plan = build_plan(policy_config(self.root), users(), rows)
@@ -257,6 +288,10 @@ class PolicyTest(TemporaryTest):
         ]
         with self.assertRaisesRegex(PolicyError, "folder identifier"):
             build_plan(policy_config(self.root), users(), duplicate)
+        malformed = folders()
+        malformed[0] = {"CollectionType": "movies", "ItemId": "-" * 32}
+        with self.assertRaisesRegex(PolicyError, "folder identifier"):
+            build_plan(policy_config(self.root), users(), malformed)
 
     def test_fails_closed_on_account_or_library_drift(self) -> None:
         config = policy_config(self.root)
@@ -523,8 +558,11 @@ class ClientTest(TemporaryTest):
         APIHandler.users_payload = {"Users": []}
         with self.assertRaisesRegex(ClientError, "invalid shape"):
             self.client.users()
-        with self.assertRaisesRegex(ClientError, "identifier"):
-            self.client.update_policy("../admin", {})
+        for identifier in ("../admin", "-" * 32):
+            with self.subTest(identifier=identifier), self.assertRaisesRegex(
+                ClientError, "identifier"
+            ):
+                self.client.update_policy(identifier, {})
         APIHandler.users_payload = "X" * (MAX_RESPONSE_BYTES + 1)
         with self.assertRaisesRegex(ClientError, "safety limit"):
             self.client.users()

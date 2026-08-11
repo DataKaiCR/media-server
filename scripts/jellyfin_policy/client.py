@@ -7,6 +7,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import stat
 from typing import Any
 import urllib.error
@@ -16,7 +17,9 @@ import urllib.request
 
 MAX_RESPONSE_BYTES = 2_097_152
 MAX_API_KEY_BYTES = 512
-_ID_CHARS = frozenset("0123456789abcdefABCDEF-")
+_USER_ID_RE = re.compile(
+    r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$"
+)
 
 
 class ClientError(RuntimeError):
@@ -86,11 +89,7 @@ def _json_response(response: Any) -> object:
 
 
 def _user_id(value: object) -> str:
-    if (
-        not isinstance(value, str)
-        or not 16 <= len(value) <= 64
-        or not all(char in _ID_CHARS for char in value)
-    ):
+    if not isinstance(value, str) or not _USER_ID_RE.fullmatch(value):
         raise ClientError("Jellyfin returned an invalid user identifier")
     return value
 

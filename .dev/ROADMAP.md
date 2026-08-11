@@ -111,18 +111,21 @@ where possible, post-change verified, audited, and rolled back on failure.
 
 - [x] MS-CP-1 — Audit Jellyfin identity roles read-only and confirm that administration, household viewing, restricted viewing, and request automation remain separate concerns.
 - [x] MS-CP-2 — Add the remaining household viewer and harden every non-admin policy, including parental limits, unrated content, library access, deletion, download, and remote-access permissions.
-  The existing two household viewers and one restricted viewer now use explicit
+  One guest, two household viewers, and one restricted viewer now use explicit
   current-library allowlists with deletion, download, public sharing, Live TV,
-  shared-device control, and premature remote access denied. The restricted
-  viewer retains a score-10 parental ceiling, blocks unrated movies, trailers,
-  and series, and cannot access music or book libraries. A private loopback-only
-  policy tool makes drift aggregate-only, backup-first, verified, and
-  rollback-safe. Twenty-one focused tests killed 15 representative policy,
-  privacy, boundary, backup-order, and rollback mutations. The operator
-  confirmed that the intended remaining viewer was already one of the existing
-  passwordless household identities; duplicate creation was refused before any
-  mutation. Its unique identity, passwordless state, household policy, and four
-  effective library types were verified without emitting private identifiers.
+  shared-device control, and premature remote access denied. The guest can use
+  movies, series, and music but not books. The restricted viewer retains a
+  score-10 parental ceiling, blocks unrated movies, trailers, and series, and
+  cannot access music or books. Two existing identities were renamed through
+  the API with stable user IDs and watch history, and one passwordless household
+  identity was added. One household password was generated into private
+  mode-`0600` state; the other three viewers remain intentionally passwordless
+  and LAN-only. A private loopback-only policy tool makes drift aggregate-only,
+  backup-first, verified, and rollback-safe. Twenty-two focused tests killed 18
+  representative policy, privacy, boundary, backup-order, and rollback
+  mutations. Effective libraries, password states, unique names, policy drift,
+  account count, and Jellyfin health were verified without emitting private
+  identifiers.
 - [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
 - [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
@@ -133,12 +136,12 @@ where possible, post-change verified, audited, and rolled back on failure.
 - [x] MS-TEST-1 — Iron-Grade harden the existing safety-critical suites.
   Audited the earlier Librarian, seeding-evidence, generated-subtitle marker,
   and translation suites against the canonical adversarial protocol. The
-  integrated 127-test suite now covers exact boundaries, malformed and oversized
+  integrated 128-test suite now covers exact boundaries, malformed and oversized
   inputs, packet ordering, private viewer policy, nested response shapes,
   symlink refusal, privacy reduction, failure rollback, and atomic publication
   using temporary filesystems, xattrs, subprocesses, real tools, and real
-  loopback HTTP servers. Source-inclusive coverage reached 83.93% of lines and
-  74.44% of branches; 43 of 43 non-equivalent representative mutations were
+  loopback HTTP servers. Source-inclusive coverage reached 83.94% of lines and
+  74.44% of branches; 46 of 46 non-equivalent representative mutations were
   killed. Falsification exposed and fixed private-manifest mode/rollback,
   arbitrary API evidence leakage, malformed numeric/shape crashes, missing
   private Librarian configuration enforcement, unbounded EPUB mimetype reads,
