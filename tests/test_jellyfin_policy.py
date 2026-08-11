@@ -49,6 +49,7 @@ FOLDER_IDS = {
 def unsafe_policy(*, administrator: bool = False, restricted: bool = False) -> dict[str, object]:
     policy: dict[str, object] = {
         "IsAdministrator": administrator,
+        "IsHidden": True,
         "EnableAllFolders": True,
         "EnabledFolders": [],
         "EnableContentDeletion": administrator,
@@ -244,6 +245,7 @@ class PolicyTest(TemporaryTest):
             self.assertTrue(policy["EnableMediaPlayback"])
             self.assertTrue(policy["EnablePlaybackRemuxing"])
             self.assertFalse(policy["IsAdministrator"])
+            self.assertFalse(policy["IsHidden"])
         self.assertEqual(set(adult["EnabledFolders"]), set(FOLDER_IDS.values()))
         self.assertEqual(
             set(child["EnabledFolders"]),
