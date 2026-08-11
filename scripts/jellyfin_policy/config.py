@@ -13,7 +13,7 @@ import urllib.parse
 
 
 _NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,64}$")
-_ROLES = {"household", "restricted"}
+_ROLES = {"guest", "household", "restricted"}
 
 
 class ConfigError(ValueError):
@@ -98,7 +98,7 @@ def _user_rules(value: object) -> tuple[UserRule, ...]:
         if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
             raise ConfigError("user names must be bounded and contain no controls")
         if role not in _ROLES:
-            raise ConfigError("user roles must be household or restricted")
+            raise ConfigError("user roles must be guest, household, or restricted")
         normalized = name.casefold()
         if normalized in seen:
             raise ConfigError("user rules must be unique case-insensitively")

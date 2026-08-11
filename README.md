@@ -124,9 +124,10 @@ validation. See [docs/jellyfin-customization.md](docs/jellyfin-customization.md)
 
 ## Jellyfin viewer access
 
-Jellyfin uses separate administrator, household-viewer, restricted-viewer, and
-request identities. A private, loopback-only policy tool audits every non-admin
-against explicit current-library access and denies deletion, downloads, public
+Jellyfin uses separate administrator, guest, household-viewer,
+restricted-viewer, and request identities. A private, loopback-only policy tool
+audits every non-admin against explicit current-library access and denies
+deletion, downloads, public
 sharing, Live TV management, shared-device control, and remote access by
 default. The restricted role also limits library types, rating score, and
 unrated video. Application is backup-first, aggregate-only, verified, and rolls

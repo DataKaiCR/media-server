@@ -14,29 +14,32 @@ issues, CI output, or public logs.
 ## Least-privilege contract
 
 The private policy configuration must enumerate every non-administrator account
-and assign exactly one role. The tool fails closed if a configured account is
-missing, an unknown non-admin appears, the server does not have exactly one
-administrator, or required library types are absent.
+and assign exactly one guest, household, or restricted role. The tool fails
+closed if a configured account is missing, an unknown non-admin appears, the
+server does not have exactly one administrator, or required library types are
+absent.
 
-| Capability | Household viewer | Restricted viewer |
-| --- | --- | --- |
-| Library access | Explicit current movie, series, music, and book folders | Explicit current movie and series folders |
-| Parental rating | Unrestricted | Jellyfin score 10 |
-| Unrated movies, trailers, and series | Allowed | Blocked |
-| Playback, remux, audio/video transcoding | Allowed | Allowed |
-| Delete media | Denied | Denied |
-| Download, sync transcode, or media conversion | Denied | Denied |
-| Public sharing | Denied | Denied |
-| Live TV and channel access | Denied | Denied |
-| Collection, subtitle, or lyric management | Denied | Denied |
-| Shared-device control | Denied | Denied |
-| Remote access | Denied until the reviewed MS-CP-4 entry point exists | Denied |
+| Capability | Guest | Household viewer | Restricted viewer |
+| --- | --- | --- | --- |
+| Library access | Explicit current movie, series, and music folders | Explicit current movie, series, music, and book folders | Explicit current movie and series folders |
+| Parental rating | Unrestricted | Unrestricted | Jellyfin score 10 |
+| Unrated movies, trailers, and series | Allowed | Allowed | Blocked |
+| Playback, remux, audio/video transcoding | Allowed | Allowed | Allowed |
+| Delete media | Denied | Denied | Denied |
+| Download, sync transcode, or media conversion | Denied | Denied | Denied |
+| Public sharing | Denied | Denied | Denied |
+| Live TV and channel access | Denied | Denied | Denied |
+| Collection, subtitle, or lyric management | Denied | Denied | Denied |
+| Shared-device control | Denied | Denied | Denied |
+| Remote access | Denied | Denied until the reviewed MS-CP-4 entry point exists | Denied |
 
 Explicit folders prevent a future private library from becoming visible merely
-because it was added to Jellyfin. The restricted role's rating and unrated-item
-rules are defense in depth; its narrower folder allowlist remains authoritative.
-Device playback stays enabled because official television and mobile clients
-need remux or bounded server transcoding when direct play is unavailable.
+because it was added to Jellyfin. Guests can use shared audiovisual and music
+collections but cannot see the household book library. The restricted role's
+rating and unrated-item rules are defense in depth; its narrower folder allowlist
+remains authoritative. Device playback stays enabled because official television
+and mobile clients need remux or bounded server transcoding when direct play is
+unavailable.
 
 The administrator policy is never generated or updated by this tool.
 
@@ -85,8 +88,9 @@ backup.
 
 1. Confirm the viewer's personal identity and intended role out of band. Never
    invent a generic account or place a password in Git history or shell logs.
-2. Create the account through the loopback/LAN administrator interface with a
-   unique temporary password delivered privately.
+2. Create the account through the loopback/LAN administrator interface. Use a
+   unique temporary password delivered privately unless the operator explicitly
+   chooses passwordless LAN-only access. Remote viewers must have a password.
 3. Add the exact account name and role to the private TOML before running the
    policy tool. Until then, the tool intentionally fails because an unknown
    non-admin exists.
@@ -96,9 +100,25 @@ backup.
    bounded transcode if the client's codec support requires it.
 6. Retain the policy snapshot until login and playback verification pass.
 
+Creating a Jellyfin viewer does not grant request-portal access. Import that
+identity separately only when request permissions are intended.
+
 Do not enable remote access during account creation. MS-CP-4 must establish the
 entry point first, and MS-CP-5 must validate one restricted remote viewer before
 other relatives are onboarded.
+
+## Renaming an identity
+
+Rename an existing viewer through Jellyfin's administrator API rather than
+creating a replacement. Keeping the user identifier preserves watch history,
+preferences, and request integration. Take the same database, policy, and
+private-config backups used for policy changes; update the private TOML in the
+same maintenance window; then verify the new name is unique, the previous name
+is absent, password state is intentional, policy drift is clean, and effective
+libraries are unchanged. Request-portal links use the stable Jellyfin user ID;
+a successful login under the new name should refresh the linked display
+identity. A generated initial password belongs only in a mode-`0600` private
+file and must be delivered out of band.
 
 ## Rollback
 
