@@ -118,9 +118,11 @@ where possible, post-change verified, audited, and rolled back on failure.
   score-10 parental ceiling, blocks unrated movies, trailers, and series, and
   cannot access music or books. Two existing identities were renamed through
   the API with stable user IDs and watch history, and one passwordless household
-  identity was added. One household password was generated into private
-  mode-`0600` state; the other three viewers remain intentionally passwordless
-  and LAN-only. A private loopback-only policy tool makes drift aggregate-only,
+  identity was added. All four viewers are intentionally passwordless and
+  LAN-only. An initial household credential was revoked, its previous value was
+  confirmed rejected, passwordless login was verified, and its obsolete private
+  working file was removed. A private loopback-only policy tool makes
+  drift aggregate-only,
   backup-first, verified, and rollback-safe. Twenty-two focused tests killed 18
   representative policy, privacy, boundary, backup-order, and rollback
   mutations. Effective libraries, password states, unique names, policy drift,
