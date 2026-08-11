@@ -93,6 +93,7 @@ def _desired_policy(
     desired = dict(original)
     desired.update({
         "IsAdministrator": False,
+        "IsHidden": False,
         "EnableAllFolders": False,
         "EnabledFolders": sorted(
             item_id for kind in _FOLDER_TYPES[role] for item_id in folders[kind]

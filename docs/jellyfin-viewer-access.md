@@ -31,6 +31,7 @@ absent.
 | Live TV and channel access | Denied | Denied | Denied |
 | Collection, subtitle, or lyric management | Denied | Denied | Denied |
 | Shared-device control | Denied | Denied | Denied |
+| Local login selector | Visible | Visible | Visible |
 | Remote access | Denied | Denied until the reviewed MS-CP-4 entry point exists | Denied |
 
 Explicit folders prevent a future private library from becoming visible merely
@@ -41,7 +42,9 @@ remains authoritative. Device playback stays enabled because official television
 and mobile clients need remux or bounded server transcoding when direct play is
 unavailable.
 
-The administrator policy is never generated or updated by this tool.
+All viewer roles remain visible in the local login selector so newly created
+passwordless accounts are discoverable. The administrator remains hidden and
+its policy is never generated or updated by this tool.
 
 ## Private configuration
 

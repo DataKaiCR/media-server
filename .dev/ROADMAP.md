@@ -121,17 +121,26 @@ where possible, post-change verified, audited, and rolled back on failure.
   identity was added. All four viewers are intentionally passwordless and
   LAN-only. An initial household credential was revoked, its previous value was
   confirmed rejected, passwordless login was verified, and its obsolete private
-  working file was removed. A private loopback-only policy tool makes
-  drift aggregate-only,
-  backup-first, verified, and rollback-safe. Twenty-two focused tests killed 18
-  representative policy, privacy, boundary, backup-order, and rollback
-  mutations. Effective libraries, password states, unique names, policy drift,
-  account count, and Jellyfin health were verified without emitting private
-  identifiers.
+  working file was removed. A private loopback-only policy tool makes drift
+  aggregate-only, backup-first, verified, and rollback-safe. Twenty-two focused
+  tests killed 19 representative policy, privacy, boundary, backup-order, and
+  rollback mutations. Effective libraries, password states, unique names,
+  local viewer visibility, policy drift, account count, and Jellyfin health
+  were verified without emitting private identifiers.
 - [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
 - [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
 - [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default; treat Cine Pelencho sideloading or a future Android/Google TV port as optional client work.
+
+### Jellyfin home usability
+
+- [x] MS-UI-1 — Put recent imported movies near the top of each built-in home screen and keep local viewer identities discoverable.
+  The plugin-free Latest Media section now follows My Media for every current
+  user while preserving each user's hide-played preference and effective
+  library allowlist. All non-admin viewers are visible in the local login
+  selector; the administrator remains hidden. Private preference and policy
+  snapshots precede changes, and aggregate post-change verification emits no
+  account, library, or title values.
 
 ### Reliability hardening
 
@@ -143,7 +152,7 @@ where possible, post-change verified, audited, and rolled back on failure.
   symlink refusal, privacy reduction, failure rollback, and atomic publication
   using temporary filesystems, xattrs, subprocesses, real tools, and real
   loopback HTTP servers. Source-inclusive coverage reached 83.94% of lines and
-  74.44% of branches; 46 of 46 non-equivalent representative mutations were
+  74.44% of branches; 47 of 47 non-equivalent representative mutations were
   killed. Falsification exposed and fixed private-manifest mode/rollback,
   arbitrary API evidence leakage, malformed numeric/shape crashes, missing
   private Librarian configuration enforcement, unbounded EPUB mimetype reads,

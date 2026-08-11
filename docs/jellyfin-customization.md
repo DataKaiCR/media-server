@@ -32,6 +32,22 @@ only to Jellyfin Web clients. External CSS, fonts, and images are fetched by
 each client; prefer reviewed, version-pinned assets served locally instead of a
 mutable remote `@import`.
 
+### Latest additions
+
+Jellyfin's built-in **Latest Media** home section provides a plugin-free recent
+movies row ordered by library addition time. Placing Latest Media immediately
+after My Media makes newly imported movies easy to find while preserving each
+viewer's library allowlist. It reflects items accepted into Jellyfin, not failed
+or rejected downloader activity; use Radarr's activity/history when import
+provenance matters.
+
+Home-section order is a per-user, per-client preference. Configure the built-in
+`emby` preference used by Jellyfin Web and web-derived television clients, take
+a private preference snapshot first, and verify each effective library view
+afterward. Native clients may retain their own home layout. The separate
+**hide played items from latest media** preference should not be silently
+changed when reordering sections.
+
 ### Existing and local artwork
 
 Jellyfin ships with TMDb, OMDb, and local metadata support. Curated local
@@ -86,12 +102,14 @@ plugin documentation for the deployed Jellyfin release before installation.
 ## Recommended progression
 
 1. Keep the built-in metadata providers and current local artwork.
-2. Define the desired visual direction, then apply a small local Custom CSS
+2. Put built-in Latest Media near the top of the home screen and verify that
+   each role sees only allowed libraries.
+3. Define the desired visual direction, then apply a small local Custom CSS
    baseline and verify representative web clients.
-3. Add File Transformation and Media Bar as one backed-up change if a dynamic
+4. Add File Transformation and Media Bar as one backed-up change if a dynamic
    hero is desired.
-4. Evaluate Intro Skipper on one series.
-5. Add Home Screen Sections only if the primary clients can display it and its
+5. Evaluate Intro Skipper on one series.
+6. Add Home Screen Sections only if the primary clients can display it and its
    recommendation rows provide clear value.
 
 This sequence provides substantial customization without Fanart.tv and keeps
