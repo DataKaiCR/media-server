@@ -110,19 +110,19 @@ where possible, post-change verified, audited, and rolled back on failure.
 ### Remote family access and Cine Pelencho identities
 
 - [x] MS-CP-1 — Audit Jellyfin identity roles read-only and confirm that administration, household viewing, restricted viewing, and request automation remain separate concerns.
-- [~] MS-CP-2 — Add the remaining household viewer and harden every non-admin policy, including parental limits, unrated content, library access, deletion, download, and remote-access permissions.
+- [x] MS-CP-2 — Add the remaining household viewer and harden every non-admin policy, including parental limits, unrated content, library access, deletion, download, and remote-access permissions.
   The existing two household viewers and one restricted viewer now use explicit
   current-library allowlists with deletion, download, public sharing, Live TV,
   shared-device control, and premature remote access denied. The restricted
   viewer retains a score-10 parental ceiling, blocks unrated movies, trailers,
   and series, and cannot access music or book libraries. A private loopback-only
   policy tool makes drift aggregate-only, backup-first, verified, and
-  rollback-safe. Twenty-one focused tests killed 15 representative policy, privacy,
-  boundary, backup-order, and rollback mutations. The remaining personal
-  identity is not present in governed state and must be confirmed out of band
-  rather than replaced with an invented shared account; this task remains in
-  progress until that identity is added and
-  playback-verified.
+  rollback-safe. Twenty-one focused tests killed 15 representative policy,
+  privacy, boundary, backup-order, and rollback mutations. The operator
+  confirmed that the intended remaining viewer was already one of the existing
+  passwordless household identities; duplicate creation was refused before any
+  mutation. Its unique identity, passwordless state, household policy, and four
+  effective library types were verified without emitting private identifiers.
 - [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
 - [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
