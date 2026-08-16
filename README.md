@@ -23,6 +23,7 @@ language-aware movie requests, and English/Latin American Spanish subtitles.
 | Whisper ASR | internal | GPU transcription and speech translation fallback |
 | Ollama | external | Private English-to-Latin-American-Spanish translation API |
 | Digital Librarian | local CLI | Report-only audits for media, photos, and books |
+| Acquisition audit | local CLI | Private report-only Jellyseerr/Radarr reconciliation |
 | Prowlarr | 9696 | Indexer management |
 | FlareSolverr | internal | Supported challenge solving for Prowlarr |
 | Gluetun | profile only | VPN namespace and firewall |
@@ -137,9 +138,12 @@ logs. See [docs/jellyfin-viewer-access.md](docs/jellyfin-viewer-access.md).
 
 ## Language-aware requests
 
-The standard Radarr profile requires English audio. Latin American Spanish
-audio receives a positive custom-format score, so English-plus-Latino releases
-win when available while English-only releases remain acceptable.
+The standard Radarr profiles require each title's original-language audio.
+English-language titles therefore still require English, while non-English
+titles accept their actual source language instead of requiring a dub. Latin
+American Spanish audio receives a positive custom-format score, so
+original-plus-Latino releases win when available while original-only releases
+remain acceptable.
 
 The movie-only Latino request portal uses a separate default profile that:
 
@@ -152,6 +156,20 @@ Both portals share one Radarr and one library. Radarr normally manages one file
 per title, so an existing English-only movie must be upgraded to dual/Latino
 audio rather than added as a parallel copy. Reliable results also require an
 indexer with strong Latin American coverage.
+
+## Acquisition reconciliation
+
+A private, report-only audit reconciles approved movie requests from both
+Jellyseerr instances with bounded Radarr movie, queue, grab/import history, and
+last-search evidence. It identifies stale searches, missing Radarr records,
+unmonitored movies, and abandoned grab/import states without querying indexers
+or exposing mutation endpoints. A companion local audit verifies imported audio
+stream labels against original-language or explicit Latino policy with bounded
+`ffprobe` evidence; generic Spanish does not prove a Latino track. Console output
+is aggregate-only, reports are atomic and mode `0600`, and neither audit exposes
+a mutation path. See
+[docs/acquisition-reconciliation.md](docs/acquisition-reconciliation.md) and
+[docs/post-import-language-verification.md](docs/post-import-language-verification.md).
 
 ## Seeding policy and evidence
 

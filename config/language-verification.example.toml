@@ -1,0 +1,35 @@
+version = 1
+report_dir = "/srv/private-state/language-verification/reports"
+page_size = 100
+max_requests_per_instance = 5000
+max_radarr_movies = 10000
+max_files = 5000
+parser_timeout_seconds = 30
+max_parser_output_bytes = 2097152
+max_parser_memory_bytes = 536870912
+ffprobe_command = "/usr/bin/ffprobe"
+latino_profile_ids = [7]
+
+[radarr]
+url = "http://127.0.0.1:7878"
+api_key_file = "/srv/private-state/language-verification/radarr-api.toml"
+timeout_seconds = 20
+
+[[jellyseerr]]
+id = "standard"
+url = "http://127.0.0.1:5055"
+api_key_file = "/srv/private-state/language-verification/jellyseerr-standard-api.toml"
+timeout_seconds = 20
+
+[[jellyseerr]]
+id = "latino"
+url = "http://127.0.0.1:5056"
+api_key_file = "/srv/private-state/language-verification/jellyseerr-latino-api.toml"
+timeout_seconds = 20
+
+[[path_mapping]]
+radarr_prefix = "/data"
+host_root = "/srv/media-data"
+
+# Every API-key file is mode 0600 and contains exactly one key:
+# api_key = "replace-with-private-runtime-value"

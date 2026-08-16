@@ -1,0 +1,28 @@
+version = 1
+report_dir = "/srv/private-state/acquisition-reconciliation/reports"
+recent_search_hours = 72
+page_size = 100
+max_requests_per_instance = 5000
+max_radarr_movies = 10000
+max_queue_records = 10000
+max_history_records = 50000
+
+[radarr]
+url = "http://127.0.0.1:7878"
+api_key_file = "/srv/private-state/acquisition-reconciliation/radarr-api.toml"
+timeout_seconds = 20
+
+[[jellyseerr]]
+id = "standard"
+url = "http://127.0.0.1:5055"
+api_key_file = "/srv/private-state/acquisition-reconciliation/jellyseerr-standard-api.toml"
+timeout_seconds = 20
+
+[[jellyseerr]]
+id = "latino"
+url = "http://127.0.0.1:5056"
+api_key_file = "/srv/private-state/acquisition-reconciliation/jellyseerr-latino-api.toml"
+timeout_seconds = 20
+
+# Every API-key file is mode 0600 and contains exactly one key:
+# api_key = "replace-with-private-runtime-value"
