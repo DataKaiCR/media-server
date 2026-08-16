@@ -51,6 +51,32 @@ language mapping. AI- and machine-translated provider results remain disabled.
 Free-tier quota exhaustion is treated as retryable rather than as a reason to
 change language policy.
 
+### [x] MS-ACQ-1 — Acquisition reconciliation
+
+Deployed a report-only audit that reconciles approved movie requests across both
+Jellyseerr instances with bounded Radarr movie, queue, grab/import history, and
+last-search evidence. It deduplicates mirrored requests, classifies stale,
+missing, unmonitored, active, available, and abandoned states, and persists no
+requester identity, token, release title, download ID, or media path. APIs are
+loopback-only and GET-only; limits fail closed; private reports are hash-chained,
+atomic, and mode `0600`. The live private baseline completed without mutation or
+credential leakage after the full 137-test suite passed.
+
+### [x] MS-ACQ-2 — Post-import language verification
+
+Deployed a report-only verifier for imported requested movies using bounded
+local `ffprobe` stream metadata rather than release titles or Radarr's parser.
+Standard profiles require a stream tagged with the title's original language;
+Latino profiles require explicit `es-419`, regional, or Latino stream metadata.
+Generic Spanish and untagged audio remain distinct unverified findings rather
+than being mislabeled as missing or accepted as Latino. Fixed path mappings,
+symlink/escape refusal, resource limits, pre/post source identity checks, and
+atomic mode-`0600` hash-chained reports preserve the read-only boundary. No raw
+stream title, media path, requester identity, token, dialogue, or subtitle text
+is persisted, and the live private baseline completed after all 147 tests
+passed. Existing playable files remain untouched and findings authorize no
+replacement or deletion.
+
 ## Next
 
 ### [~] MS-4 — Digital Librarian
@@ -130,7 +156,7 @@ where possible, post-change verified, audited, and rolled back on failure.
 - [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
 - [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
-- [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default; treat Cine Pelencho sideloading or a future Android/Google TV port as optional client work.
+- [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default while the separate Cine Pelencho project evaluates Fladder as a shared phone, tablet, desktop, web, and iOS foundation and compares Fladder with Wholphin for Android/Google/Fire TV. Custom clients remain optional and cannot gate secure remote-family access.
 
 ### Jellyfin home usability
 
@@ -204,6 +230,15 @@ public logs.
 
 ## Blocked
 
+### [!] MS-STOR-1 — Five-disk storage pool readiness
+
+Pool creation is on hold until the fifth 10 TB HDD arrives. The four present
+disks have passing extended SMART evidence, but no partition, format, pool, or
+migration action is authorized. After the fifth disk arrives, verify its full
+SMART evidence and identity, then review controller/HBA behavior, airflow,
+passthrough, pool topology, backup and restore readiness, source comparison,
+and exact destructive-operation gates before approving any storage mutation.
+
 ### [!] MS-8 — Challenge-gated public indexers
 
 The deployed challenge solver does not currently handle the target sites'
@@ -220,6 +255,8 @@ private source with better retention.
 - **Whisper model size:** keep `medium` unless measured GPU contention or latency
   justifies another model.
 - **Generic Spanish fallback:** continue preferring no subtitle over an unwanted
-  Castilian subtitle until the validated translation stage exists.
+  Castilian subtitle. The validated translation stage now exists and may produce
+  visibly generated neutral Latin American Spanish only after human `ea`
+  providers fail; it does not make generic `es` acceptable.
 - **Parallel language copies:** retain one Radarr file per title unless a real
   requirement justifies a second Radarr and separate library.
