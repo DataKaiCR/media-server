@@ -1,0 +1,47 @@
+# Copy outside Git, use neutral aliases, and protect with mode 0600.
+version = 1
+captured_at = "YYYY-MM-DD"
+
+[server]
+wan_address_class = "unknown" # public, cgnat, private, or unknown
+inbound_tcp_443 = "unknown"   # available, blocked, or unknown
+tailscale_udp = true
+tailscale_ipv4 = true
+tailscale_ipv6 = false
+tailscale_serve_enabled = false
+https_443_listener = false
+non_admin_policy_compliant = true
+firewall_review_required = true
+upload_mbps_samples = []
+
+# Add one block per household. Keep real names, addresses, public IPs, ISP
+# account numbers, and credentials out of this file.
+[[households]]
+id = "household-a"
+isp_type = "unknown"
+wan_address_class = "unknown"
+data_cap = "unknown"
+evening_congestion = "unknown"
+download_mbps_samples = []
+upload_mbps_samples = []
+latency_ms_samples = []
+tailscale_path = "unknown" # direct, relayed, mixed, unavailable, or unknown
+selected_exposure = "undecided" # tailscale, https, or undecided
+selection_reason = "pending device and network evidence"
+pilot_candidate = false
+
+[[households.devices]]
+id = "living-room-tv"
+category = "television"
+brand = "unknown"
+model = "unknown"
+platform = "unknown"
+platform_version = "unknown"
+network_connection = "unknown"
+official_jellyfin_client = "unknown" # available, unavailable, or unknown
+tailscale_client = "unknown"         # available, unavailable, or unknown
+sideloading = "unknown"              # acceptable, prohibited, or unknown
+max_resolution = "unknown"
+hdr_required = false
+direct_play_notes = "unknown"
+primary_playback_device = true
