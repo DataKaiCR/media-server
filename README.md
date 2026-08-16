@@ -136,6 +136,12 @@ unrated video. Application is backup-first, aggregate-only, verified, and rolls
 back failures; account names and identifiers never enter repository state or
 logs. See [docs/jellyfin-viewer-access.md](docs/jellyfin-viewer-access.md).
 
+Remote-family access remains discovery-gated. Exact television platforms,
+client availability, VPN support, household network conditions, and Gruff's
+measured upload floor must be recorded before selecting private Tailscale or a
+hardened HTTPS entry point. See
+[docs/remote-family-discovery.md](docs/remote-family-discovery.md).
+
 ## Language-aware requests
 
 The standard Radarr profiles require each title's original-language audio.

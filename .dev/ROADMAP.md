@@ -153,7 +153,15 @@ where possible, post-change verified, audited, and rolled back on failure.
   rollback mutations. Effective libraries, password states, unique names,
   local viewer visibility, policy drift, account count, and Jellyfin health
   were verified without emitting private identifiers.
-- [ ] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
+- [~] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
+  Read-only server discovery confirms healthy IPv4/UDP Tailscale connectivity,
+  no Tailscale Serve configuration, no HTTPS listener on port 443, compliant
+  LAN-only non-admin policies, and host-wide Jellyfin/Servarr bindings behind a
+  LAN firewall profile that currently permits all high TCP and UDP ports. A
+  private inventory template and per-household decision gates now exist. Exact
+  television models, client/VPN availability, household network samples,
+  Gruff's sustained upload floor, and its WAN address class remain required;
+  no remote exposure or account-policy change is authorized yet.
 - [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
 - [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
 - [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default while the separate Cine Pelencho project evaluates Fladder as a shared phone, tablet, desktop, web, and iOS foundation and compares Fladder with Wholphin for Android/Google/Fire TV. Custom clients remain optional and cannot gate secure remote-family access.
