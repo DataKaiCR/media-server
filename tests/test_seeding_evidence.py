@@ -558,6 +558,33 @@ native_stop = true
         self.assertNotIn("PRIVATE VERSION", rendered)
         self.assertNotIn("PRIVATE CONNECTION", rendered)
 
+    def test_qbittorrent_five_stopped_states_remain_aggregate_evidence(self) -> None:
+        config = load_config(self.write_config(1))
+        report = build_report(
+            config,
+            {
+                "version": "v5.0.4",
+                "torrents": [
+                    {
+                        "tags": "seed-standard-3x-14d",
+                        "state": "stoppedUP",
+                        "progress": 1,
+                    },
+                    {
+                        "tags": "seed-standard-3x-14d",
+                        "state": "stoppedDL",
+                        "progress": 0,
+                    },
+                ],
+                "server_state": {},
+                "preferences": {},
+            },
+        )
+        self.assertEqual(
+            report["summary"]["state_counts"],
+            {"stoppedDL": 1, "stoppedUP": 1},
+        )
+
     def test_previous_report_ignores_symlinks_and_untrusted_names(self) -> None:
         self.reports.mkdir(mode=0o700)
         legitimate = self.reports / "seeding-evidence-20260101T000000.000000Z.json"

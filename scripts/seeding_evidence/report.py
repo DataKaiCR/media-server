@@ -26,8 +26,8 @@ _TORRENT_STATES = {
     "allocating", "checkingDL", "checkingResumeData", "checkingUP",
     "downloading", "error", "forcedDL", "forcedMetaDL", "forcedUP",
     "metaDL", "missingFiles", "moving", "pausedDL", "pausedUP",
-    "queuedDL", "queuedUP", "stalledDL", "stalledUP", "unknown",
-    "uploading",
+    "queuedDL", "queuedUP", "stalledDL", "stalledUP", "stoppedDL",
+    "stoppedUP", "unknown", "uploading",
 }
 
 
