@@ -19,6 +19,7 @@ READ_ENDPOINTS = {
     "app/version",
     "sync/maindata?rid=0",
     "torrents/info",
+    "torrents/tags",
 }
 
 

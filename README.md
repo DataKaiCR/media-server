@@ -186,12 +186,16 @@ Latin American, obscure, or low-swarm material remains protected for at least
 90 days and may be retained indefinitely. Tracker-specific seed-time and
 hit-and-run rules always override these defaults.
 
-The initial seeding auditor is report-only. It reads qBittorrent through a
+The seeding auditor remains report-only. It reads qBittorrent through a
 loopback-only API configuration and publishes mode-0600 aggregate evidence
 without torrent names, infohashes, tracker domains, announce URLs, passkeys, or
-per-torrent records. It cannot tag, pause, limit, or delete torrents. Tracker
-profiles remain the authoritative evidence for tracker applications. See
-[docs/seeding-evidence.md](docs/seeding-evidence.md).
+per-torrent records. A separate allowlisted classifier prevents new acquisitions
+from remaining unclassified: metadata-ready non-private torrents receive the
+Standard floor and private-metainfo torrents receive the Contributor floor.
+Existing policy tags and metadata-pending torrents are left unchanged; Common
+and Stewardship remain review decisions. Neither tool can pause, limit, or delete
+torrents. Tracker profiles remain the authoritative evidence for tracker
+applications. See [docs/seeding-evidence.md](docs/seeding-evidence.md).
 
 ## Movie quality policy
 
