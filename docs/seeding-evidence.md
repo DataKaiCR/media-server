@@ -34,8 +34,17 @@ Tracker-specific minimums always override these defaults. The three-day tier is
 for highly available public material and must not be used to evade a private
 tracker's seed-time or hit-and-run rules.
 
-Tags are initially manual. The audit reports unclassified and conflicting tier
-tag counts but deliberately has no tag mutation endpoint.
+The initial backfill is manually reviewed. A separate, narrowly scoped default
+classifier can keep later acquisitions from becoming unclassified: once torrent
+metadata is available, it assigns Standard to non-private metainfo and
+Contributor to private metainfo. Those are retention floors, not tracker-rule
+proof. It never assigns Common, promotes to Stewardship, changes an existing
+policy tag, or infers language, rarity, or tracker rules. Conflicting rows are
+left unchanged and produce an aggregate attention result.
+
+The evidence audit remains strictly report-only and has no mutation endpoint.
+The classifier uses a separate client that allowlists only tag creation,
+addition, and rollback; it cannot pause, limit, or delete torrents.
 
 ## Private configuration
 
@@ -94,13 +103,48 @@ It never includes enough information to reconstruct a torrent inventory. Daily
 reports therefore support internal policy review but do not replace tracker
 profile links or unedited tracker-side evidence when requesting access.
 
-## Daily scheduling
+## Default classification
 
-Run the report once daily after qBittorrent has been available long enough to
-refresh its state. A systemd service should use `UMask=0077`, a private
-configuration path, and read/write access only to the report directory. The
-first deployment should remain report-only for several weeks before considering
-any approved cleanup executor.
+Preview aggregate assignments without mutation:
+
+```bash
+python scripts/seeding-classify.py \
+  --config /srv/private-state/seeding-evidence/config.toml
+```
+
+Apply the approved defaults explicitly:
+
+```bash
+python scripts/seeding-classify.py \
+  --config /srv/private-state/seeding-evidence/config.toml \
+  --public-default-tier standard \
+  --private-default-tier contributor \
+  --apply
+```
+
+The classifier waits when metadata size or the private-metainfo flag is not yet
+usable, and a later timer run retries. It preserves non-policy tags and any
+existing single policy tier. Output and service logs contain aggregate counts
+only; torrent names, hashes, tracker data, and per-torrent rows are neither
+printed nor persisted. If post-mutation verification finds a race or conflict,
+the classifier removes only the tag it just attempted and reports attention.
+
+Common and Stewardship remain review decisions. In particular, low-swarm or
+Latin American releases should be promoted to Stewardship rather than relying
+indefinitely on the Standard default. Tracker-specific rules still override a
+Contributor default and must be checked at removal review.
+
+## Scheduling
+
+Run the evidence report once daily after qBittorrent has been available long
+enough to refresh its state. Run the approved classifier every five minutes so
+metadata-pending additions are retried promptly. Example hardened units are
+[`media-seeding-classification.service`](../config/systemd/media-seeding-classification.service)
+and
+[`media-seeding-classification.timer`](../config/systemd/media-seeding-classification.timer).
+They use `UMask=0077`, the private configuration path, and a tag-only mutation
+surface. Keep cleanup in a separately reviewed workflow; enabling classification
+does not authorize automatic removal.
 
 Do not implement cleanup as qBittorrent's simple ratio-or-time share limit. The
 policy requires tier-aware logic, tracker-rule precedence, protected torrents,
@@ -136,3 +180,9 @@ second full copy, and scarce sources may deserve indefinite stewardship.
 The audit mutates no qBittorrent or payload state. Disable its timer and remove
 its private reports/configuration to roll it back. Reports can be retained as
 immutable evidence or deleted after their hashes are independently recorded.
+
+To stop future default tagging, disable
+`media-seeding-classification.timer`. Existing reviewed policy tags should
+normally remain because disabling automation does not invalidate their retention
+classification. The classifier never changes payload, pause state, share limits,
+or tracker configuration.
