@@ -17,6 +17,7 @@ tag = "seed-common-3d"
 minimum_days = 3
 review_after_days = 3
 protected = false
+native_stop = true
 
 # Both the time floor and ratio target must be met. If ratio remains low,
 # review after 30 days rather than deleting automatically.
@@ -27,6 +28,10 @@ minimum_days = 14
 target_ratio = 3.0
 review_after_days = 30
 protected = false
+# qBittorrent's native limits are OR conditions, so Standard stops at ratio 3
+# or 14 active seeding days, whichever comes first.
+threshold_mode = "any"
+native_stop = true
 
 # Private-tracker and desirable releases use a longer floor and higher target.
 [[tiers]]

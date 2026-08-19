@@ -99,6 +99,8 @@ def _tier_template(tier: TierConfig) -> dict[str, Any]:
         "target_ratio": tier.target_ratio,
         "review_after_days": tier.review_after_days,
         "protected": tier.protected,
+        "threshold_mode": tier.threshold_mode,
+        "native_stop": tier.native_stop,
         "torrent_count": 0,
         "payload_bytes": 0,
         "uploaded_bytes": 0,
@@ -209,13 +211,19 @@ def _record_torrent(
     tier_totals["uploaded_bytes"] += uploaded
     time_met = seed_days >= tier.minimum_days
     ratio_met = tier.target_ratio is None or ratio >= tier.target_ratio
+    conditions = [time_met]
+    if tier.target_ratio is not None:
+        conditions.append(ratio_met)
+    threshold_met = (
+        any(conditions) if tier.threshold_mode == "any" else all(conditions)
+    )
     if not time_met:
         tier_totals["below_time_floor_count"] += 1
     if not ratio_met:
         tier_totals["below_ratio_target_count"] += 1
-    if time_met and ratio_met and not tier.protected:
+    if threshold_met and not tier.protected:
         tier_totals["policy_threshold_met_count"] += 1
-    if seed_days >= tier.review_after_days and not (time_met and ratio_met):
+    if seed_days >= tier.review_after_days and not threshold_met:
         tier_totals["review_due_count"] += 1
 
 

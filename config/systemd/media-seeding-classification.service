@@ -1,5 +1,5 @@
 [Unit]
-Description=Apply conservative default torrent seeding classifications
+Description=Apply torrent seeding classifications and native stop limits
 Documentation=file://%h/projects/media-server/docs/seeding-evidence.md
 Wants=network-online.target media-download-stack.service
 After=network-online.target media-download-stack.service
@@ -9,6 +9,7 @@ Type=oneshot
 UMask=0077
 WorkingDirectory=%h/projects/media-server
 ExecStart=/usr/bin/python3 %h/projects/media-server/scripts/seeding-classify.py --config %h/appdata/seeding-evidence/config.toml --public-default-tier standard --private-default-tier contributor --apply
+ExecStart=/usr/bin/python3 %h/projects/media-server/scripts/seeding-limits.py --config %h/appdata/seeding-evidence/config.toml --apply
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
