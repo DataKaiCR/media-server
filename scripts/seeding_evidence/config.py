@@ -42,6 +42,8 @@ class TierConfig:
     target_ratio: float | None
     review_after_days: int
     protected: bool
+    threshold_mode: str
+    native_stop: bool
 
 
 @dataclass(frozen=True)
@@ -145,7 +147,16 @@ def _bounded_integer(value: object, field: str, minimum: int, maximum: int) -> i
 def _tier(row: object) -> TierConfig:
     if not isinstance(row, dict):
         raise ConfigError("each tiers entry must be a TOML table")
-    allowed = {"id", "tag", "minimum_days", "target_ratio", "review_after_days", "protected"}
+    allowed = {
+        "id",
+        "tag",
+        "minimum_days",
+        "target_ratio",
+        "review_after_days",
+        "protected",
+        "threshold_mode",
+        "native_stop",
+    }
     unknown = set(row) - allowed
     if unknown:
         raise ConfigError(f"unknown tier setting: {sorted(unknown)[0]}")
@@ -169,7 +180,26 @@ def _tier(row: object) -> TierConfig:
         raise ConfigError("tier.protected must be true or false")
     if protected and target is not None:
         raise ConfigError("protected tiers must not define a cleanup ratio target")
-    return TierConfig(tier_id, tag, minimum_days, target, review_after_days, protected)
+    threshold_mode = row.get("threshold_mode", "all")
+    if threshold_mode not in {"all", "any"}:
+        raise ConfigError("tier.threshold_mode must be all or any")
+    native_stop = row.get("native_stop", False)
+    if not isinstance(native_stop, bool):
+        raise ConfigError("tier.native_stop must be true or false")
+    if protected and native_stop:
+        raise ConfigError("protected tiers cannot enable native stop")
+    if native_stop and target is not None and threshold_mode != "any":
+        raise ConfigError("native stop tiers with a ratio target must use threshold_mode any")
+    return TierConfig(
+        tier_id,
+        tag,
+        minimum_days,
+        target,
+        review_after_days,
+        protected,
+        threshold_mode,
+        native_stop,
+    )
 
 
 def load_config(path: Path) -> EvidenceConfig:

@@ -179,12 +179,12 @@ a mutation path. See
 
 ## Seeding policy and evidence
 
-Torrent retention uses four explicit tiers: common public material has a
-three-day floor; standard material targets ratio 3 after at least 14 days;
-contributor material targets ratio 5 after at least 30 days; and scarce,
-Latin American, obscure, or low-swarm material remains protected for at least
-90 days and may be retained indefinitely. Tracker-specific seed-time and
-hit-and-run rules always override these defaults.
+Torrent retention uses four explicit tiers: common public material stops after
+three active seeding days; standard material stops at ratio 3 or 14 active
+seeding days; contributor material remains subject to tracker-specific review;
+and scarce, Latin American, obscure, or low-swarm material is protected from
+automatic stopping. qBittorrent uses OR when both ratio and time are configured.
+Tracker-specific seed-time and hit-and-run rules always override these defaults.
 
 The seeding auditor remains report-only. It reads qBittorrent through a
 loopback-only API configuration and publishes mode-0600 aggregate evidence
@@ -193,9 +193,12 @@ per-torrent records. A separate allowlisted classifier prevents new acquisitions
 from remaining unclassified: metadata-ready non-private torrents receive the
 Standard floor and private-metainfo torrents receive the Contributor floor.
 Existing policy tags and metadata-pending torrents are left unchanged; Common
-and Stewardship remain review decisions. Neither tool can pause, limit, or delete
-torrents. Tracker profiles remain the authoritative evidence for tracker
-applications. See [docs/seeding-evidence.md](docs/seeding-evidence.md).
+and Stewardship remain review decisions. A narrow reconciler applies native
+per-tier share limits with qBittorrent's action fixed to Stop. Radarr or Sonarr
+then removes only stopped downloads it successfully imported. No custom tool can
+pause, resume, or delete torrents. Tracker profiles remain the authoritative
+evidence for tracker applications. See
+[docs/seeding-evidence.md](docs/seeding-evidence.md).
 
 ## Movie quality policy
 

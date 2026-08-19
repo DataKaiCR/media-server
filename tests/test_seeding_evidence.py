@@ -325,6 +325,70 @@ protected = true
             with self.assertRaises(ConfigError):
                 load_config(path)
 
+    def test_native_stop_configuration_matches_qbittorrent_or_semantics(self) -> None:
+        with FakeServer() as port:
+            path = self.write_config(port)
+            text = path.read_text(encoding="utf-8")
+            text = text.replace(
+                '''target_ratio = 3.0
+review_after_days = 30
+protected = false
+''',
+                '''target_ratio = 3.0
+review_after_days = 30
+protected = false
+threshold_mode = "any"
+native_stop = true
+''',
+            )
+            path.write_text(text, encoding="utf-8")
+            config = load_config(path)
+            standard = next(tier for tier in config.tiers if tier.tier_id == "standard")
+            self.assertEqual(standard.threshold_mode, "any")
+            self.assertTrue(standard.native_stop)
+            report = build_report(
+                config,
+                {
+                    "version": "v5.0.4",
+                    "torrents": [
+                        {
+                            "tags": "seed-standard-3x-14d",
+                            "ratio": 3,
+                            "seeding_time": 60,
+                            "progress": 1,
+                            "state": "stalledUP",
+                        }
+                    ],
+                    "server_state": {},
+                    "preferences": {},
+                },
+            )
+            tiers = {tier["id"]: tier for tier in report["tiers"]}
+            self.assertEqual(tiers["standard"]["policy_threshold_met_count"], 1)
+            self.assertEqual(tiers["standard"]["threshold_mode"], "any")
+            self.assertTrue(tiers["standard"]["native_stop"])
+
+            path = self.write_config(port)
+            path.write_text(
+                path.read_text(encoding="utf-8").replace(
+                    '''target_ratio = 3.0
+review_after_days = 30
+protected = false
+''',
+                    '''target_ratio = 3.0
+review_after_days = 30
+protected = false
+native_stop = true
+''',
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "threshold_mode any"):
+                load_config(path)
+
+            with self.assertRaisesRegex(ConfigError, "protected tiers"):
+                load_config(self.write_config(port, extra="native_stop = true\n"))
+
     def test_client_rejects_mutation_endpoint(self) -> None:
         with FakeServer() as port:
             config = load_config(self.write_config(port))

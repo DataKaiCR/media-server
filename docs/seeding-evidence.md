@@ -17,18 +17,19 @@ share. A private tracker does not change the underlying rights.
 
 ## Policy tiers
 
-| Tier | qBittorrent tag | Minimum seed time | Ratio target | Review point |
-| --- | --- | ---: | ---: | ---: |
-| Common | `seed-common-3d` | 3 days | none | 3 days |
-| Standard | `seed-standard-3x-14d` | 14 days | 3.0 | 30 days |
-| Contributor | `seed-contributor-5x-30d` | 30 days | 5.0 | 90 days |
-| Stewardship | `seed-stewardship-90d` | 90 days | informational | 365 days |
+| Tier | qBittorrent tag | Native completion condition | Review point |
+| --- | --- | --- | ---: |
+| Common | `seed-common-3d` | 3 active seeding days | 3 days |
+| Standard | `seed-standard-3x-14d` | ratio 3 **or** 14 active seeding days | 30 days |
+| Contributor | `seed-contributor-5x-30d` | tracker-specific; no automatic stop | 90 days |
+| Stewardship | `seed-stewardship-90d` | protected; no automatic stop | 365 days |
 
-Time is a floor. Standard and contributor torrents meet their policy threshold
-only when both time and ratio are satisfied. A torrent that reaches its review
-point without ratio is evidence for human review, not permission to delete.
-Stewardship torrents are protected regardless of ratio. Use that tier for rare,
-Latin American, obscure, or low-swarm material.
+qBittorrent combines ratio, seeding-time, and inactive-time limits with OR, not
+AND. Standard therefore completes when either approved native limit is reached.
+Contributor retains the 30-day and ratio-5 values as local review evidence, but
+private-tracker rules must be confirmed before it is stopped or removed.
+Stewardship is protected regardless of ratio. Use that tier for rare, Latin
+American, obscure, or low-swarm material.
 
 Tracker-specific minimums always override these defaults. The three-day tier is
 for highly available public material and must not be used to evade a private
@@ -44,7 +45,9 @@ left unchanged and produce an aggregate attention result.
 
 The evidence audit remains strictly report-only and has no mutation endpoint.
 The classifier uses a separate client that allowlists only tag creation,
-addition, and rollback; it cannot pause, limit, or delete torrents.
+addition, and rollback. A second narrow reconciler maps reviewed tiers to native
+qBittorrent share limits and enforces the global Stop action; neither tool can
+call pause, resume, or torrent-deletion endpoints.
 
 ## Private configuration
 
@@ -134,6 +137,37 @@ Latin American releases should be promoted to Stewardship rather than relying
 indefinitely on the Standard default. Tracker-specific rules still override a
 Contributor default and must be checked at removal review.
 
+## Native stop and Arr removal
+
+Preview native-limit reconciliation without mutation:
+
+```bash
+python scripts/seeding-limits.py \
+  --config /srv/private-state/seeding-evidence/config.toml
+```
+
+Apply the configured tier limits:
+
+```bash
+python scripts/seeding-limits.py \
+  --config /srv/private-state/seeding-evidence/config.toml \
+  --apply
+```
+
+A tier opts in with `native_stop = true`. When that tier has both a ratio target
+and a time value, it must use `threshold_mode = "any"` because qBittorrent
+processes those limits as OR. Inactive-time limits are always disabled: they
+measure time since activity and could stop a low-demand torrent before its
+active-seeding goal. Tiers without native stop receive explicit unlimited
+per-torrent values, insulating Contributor and Stewardship from global defaults.
+
+The reconciler also requires global share limits to be disabled and the native
+action to be Stop. After qBittorrent stops an imported torrent, Radarr or Sonarr
+Completed Download Handling removes the client entry and torrent-side payload;
+the hardlinked library file remains. If import failed, Arr leaves the stopped
+torrent visible for attention instead of deleting the only payload. Forced
+torrents bypass qBittorrent share limits and are reported as attention.
+
 ## Scheduling
 
 Run the evidence report once daily after qBittorrent has been available long
@@ -142,13 +176,14 @@ metadata-pending additions are retried promptly. Example hardened units are
 [`media-seeding-classification.service`](../config/systemd/media-seeding-classification.service)
 and
 [`media-seeding-classification.timer`](../config/systemd/media-seeding-classification.timer).
-They use `UMask=0077`, the private configuration path, and a tag-only mutation
-surface. Keep cleanup in a separately reviewed workflow; enabling classification
-does not authorize automatic removal.
+They use `UMask=0077`, the private configuration path, and narrow tag/share-limit
+mutation surfaces. qBittorrent performs only the native Stop; existing Arr
+Completed Download Handling owns imported-download removal.
 
-Do not implement cleanup as qBittorrent's simple ratio-or-time share limit. The
-policy requires tier-aware logic, tracker-rule precedence, protected torrents,
-and explicit review when a ratio target cannot be reached.
+Do not enable one global ratio or time limit for every torrent. The reconciler
+sets explicit per-tier limits, protects Contributor and Stewardship with
+unlimited overrides, disables inactive-time cleanup, and fails attention when a
+forced torrent would bypass policy.
 
 ## Tracker evidence package
 
@@ -181,8 +216,11 @@ The audit mutates no qBittorrent or payload state. Disable its timer and remove
 its private reports/configuration to roll it back. Reports can be retained as
 immutable evidence or deleted after their hashes are independently recorded.
 
-To stop future default tagging, disable
+To stop future default tagging and limit reconciliation, disable
 `media-seeding-classification.timer`. Existing reviewed policy tags should
 normally remain because disabling automation does not invalidate their retention
-classification. The classifier never changes payload, pause state, share limits,
-or tracker configuration.
+classification. To disable native completion as well, set all three per-torrent
+share limits to unlimited before re-enabling the timer with `native_stop = false`
+for every tier. The tools never directly pause, resume, remove, or delete torrent
+content; qBittorrent Stop and Arr Completed Download Handling remain distinct
+steps.
