@@ -33,6 +33,7 @@ class ExternalMediaComposeTests(unittest.TestCase):
         for name, expected_port in (
             ("jellyfin-external", "8096"),
             ("jellyseerr-external", "5055"),
+            ("cine-pelencho-web", "8080"),
         ):
             block = _service_block(name)
             self.assertIn('profiles: ["external"]', block)
@@ -82,6 +83,20 @@ class ExternalMediaComposeTests(unittest.TestCase):
         self.assertNotIn("depends_on:", block)
         self.assertNotIn("devices:", block)
         self.assertEqual(len(_volume_rows(block)), 1)
+
+    def test_cine_pelencho_web_is_digest_pinned_and_runtime_hardened(self) -> None:
+        block = _service_block("cine-pelencho-web")
+
+        self.assertRegex(
+            block,
+            r"image: localhost/cine-pelencho-web@sha256:[0-9a-f]{64}",
+        )
+        self.assertIn("read_only: true", block)
+        self.assertIn("cap_drop: [ALL]", block)
+        self.assertIn("no-new-privileges:true", block)
+        self.assertIn("/tmp:rw,noexec,nosuid,nodev,size=32m", block)
+        self.assertIn("http://127.0.0.1:8080/healthz", block)
+        self.assertNotIn("volumes:", block)
 
     def test_external_transcode_path_is_explicit_in_environment_template(self) -> None:
         lines = ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
