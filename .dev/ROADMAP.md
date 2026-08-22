@@ -153,18 +153,25 @@ where possible, post-change verified, audited, and rolled back on failure.
   rollback mutations. Effective libraries, password states, unique names,
   local viewer visibility, policy drift, account count, and Jellyfin health
   were verified without emitting private identifiers.
-- [~] MS-CP-3 — Inventory relatives' television platforms, ISP/CGNAT conditions, measured upload capacity, and official Jellyfin client availability before selecting an exposure model.
-  Read-only server discovery confirms healthy IPv4/UDP Tailscale connectivity,
-  no Tailscale Serve configuration, no HTTPS listener on port 443, compliant
-  LAN-only non-admin policies, and host-wide Jellyfin/Servarr bindings behind a
-  LAN firewall profile that currently permits all high TCP and UDP ports. A
-  private inventory template and per-household decision gates now exist. Exact
-  television models, client/VPN availability, household network samples,
-  Gruff's sustained upload floor, and its WAN address class remain required;
-  no remote exposure or account-policy change is authorized yet.
-- [ ] MS-CP-4 — Implement one reviewed remote entry point: private VPN where client support permits, otherwise HTTPS on port 443 through a hardened reverse proxy; keep administration and Servarr surfaces LAN/VPN-only.
-- [ ] MS-CP-5 — Onboard one restricted remote test viewer, validate direct play and bounded hardware transcoding, then add other relatives only after monitoring and rollback checks pass.
-- [ ] MS-CP-6 — Keep external viewers on official Jellyfin clients by default while the separate Cine Pelencho project evaluates Fladder as a shared phone, tablet, desktop, web, and iOS foundation and compares Fladder with Wholphin for Android/Google/Fire TV. Custom clients remain optional and cannot gate secure remote-family access.
+- [~] MS-CP-3 — Inventory relatives' client platforms, ISP/CGNAT conditions, measured upload capacity, and playback compatibility before broad onboarding.
+  The first external Linux client now proves shared-node DNS, Tailnet routing,
+  TCP 443, trusted TLS 1.3, HTTP/2, and Jellyfin's expected redirect. Exact
+  household network samples, Gruff's sustained upload floor, remaining client
+  inventory, and representative playback/transcode evidence remain open.
+- [~] MS-CP-4 — Complete the isolated Tailscale-shared gateway and replace its rejected shared-household application target with a dedicated external media plane.
+  `home-ingress-01` is live with one locked VLAN 90 VIF, no network SSH, no
+  Funnel/routes/DNS/exit-node role, and an exact-recipient TCP 443 grant. A
+  loopback `systemd-socket-proxyd` relay is required because Tailscale Serve's
+  direct proxy to another Tailnet address stalled before Traefik. External
+  DNS/TCP/TLS/HTTP validation passes. The initial route to household Jellyfin is
+  rejected for acceptance: four visible passwordless household profiles were
+  proven authenticatable through the gateway even though administration,
+  deletion, download, Live TV, and management remained denied.
+- [~] MS-CP-4A — Deploy one dedicated `jellyfin-external` instance on Gruff with separate config, database, cache, users, sessions, and watch history; mount only existing Movies and TV media read-only; share GPU/transcode infrastructure without copying media bytes.
+- [ ] MS-CP-4B — Publish `watch.external.datakai.net` only through the shared gateway on TCP 443 with trusted DNS-01 TLS and a dedicated Traefik external entrypoint. Serve the Cine Pelencho browser client at `/`, place the external Jellyfin API behind an explicit base path, and deny the stock Jellyfin web client unless separately required for recovery.
+- [ ] MS-CP-4C — Deploy one dedicated `jellyseerr-external` instance at `requests.external.datakai.net`. Import only approved external identities, disable unreviewed user auto-provisioning, grant request-only permissions and optional quotas, and require operator approval before Radarr/Sonarr submission.
+- [ ] MS-CP-5 — Re-onboard the pilot viewer only after the isolated application cutover; validate hidden/password-protected external identities, exact libraries, Pelencho login/playback/WebSockets/seek/resume, bounded hardware transcoding, request approval, exhaustive negative reachability, share revocation, and lifecycle persistence before adding relatives.
+- [~] MS-CP-6 — Deliver Cine Pelencho as the browser-facing external client while retaining official Jellyfin clients as independent recovery paths. Browser builds may select capability-appropriate bundles, but every platform keeps its own playback and compatibility acceptance gate; no package may embed a server credential or user secret.
 
 ### Jellyfin home usability
 
