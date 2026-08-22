@@ -29,11 +29,10 @@ def _volume_rows(block: str) -> list[str]:
 
 
 class ExternalMediaComposeTests(unittest.TestCase):
-    def test_external_services_are_inert_and_have_no_host_ports(self) -> None:
+    def test_external_stateful_services_are_inert_and_have_no_host_ports(self) -> None:
         for name, expected_port in (
             ("jellyfin-external", "8096"),
             ("jellyseerr-external", "5055"),
-            ("cine-pelencho-web", "8080"),
         ):
             block = _service_block(name)
             self.assertIn('profiles: ["external"]', block)
@@ -84,9 +83,14 @@ class ExternalMediaComposeTests(unittest.TestCase):
         self.assertNotIn("devices:", block)
         self.assertEqual(len(_volume_rows(block)), 1)
 
-    def test_cine_pelencho_web_is_digest_pinned_and_runtime_hardened(self) -> None:
+    def test_cine_pelencho_web_is_shared_digest_pinned_and_runtime_hardened(self) -> None:
         block = _service_block("cine-pelencho-web")
 
+        self.assertNotIn("profiles:", block)
+        self.assertNotRegex(block, r"(?m)^    ports:")
+        self.assertIn('expose: ["8080"]', block)
+        self.assertIn("networks: [media]", block)
+        self.assertIn('traefik.enable: "false"', block)
         self.assertRegex(
             block,
             r"image: localhost/cine-pelencho-web@sha256:[0-9a-f]{64}",
