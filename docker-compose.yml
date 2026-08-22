@@ -212,9 +212,11 @@ services:
       - ${DATA}/media:/data/media:ro          # read-only: Jellyfin never writes here
       - ${TRANSCODE}:/config/transcodes       # scratch on NVMe, not the HDD
 
-  # Isolated application plane for individually shared external viewers. These
-  # services are profile-gated, publish no host ports, and do not mount the
-  # household Jellyfin/Jellyseerr state. Only Movies and TV cross the boundary.
+  # Isolated stateful application plane for individually shared external
+  # viewers. These services are profile-gated, publish no host ports, and do
+  # not mount household Jellyfin/Jellyseerr state. Only Movies and TV cross the
+  # boundary. The stateless Cine Pelencho artifact below is intentionally shared
+  # by household and external origins so one image/build receives maintenance.
   jellyfin-external:
     <<: *common
     profiles: ["external"]
@@ -248,9 +250,11 @@ services:
     labels:
       traefik.enable: "false"
 
+  # Shared static browser artifact. Traefik binds each trusted origin's
+  # same-origin /jellyfin path to its own Jellyfin instance; browser origin
+  # storage keeps household and external sessions separate.
   cine-pelencho-web:
     <<: *common
-    profiles: ["external"]
     image: localhost/cine-pelencho-web@sha256:d2a20d82438d8db2f1f4637b48cbf6cde44ce9efb624725b00151c3094ad7eb8
     container_name: cine-pelencho-web
     networks: [media]

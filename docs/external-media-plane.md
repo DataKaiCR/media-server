@@ -62,9 +62,14 @@ identity or activity, that is a separate per-family-instance decision.
 ## Browser and API boundary
 
 `https://watch.external.datakai.net/` serves Cine Pelencho rather than stock
-Jellyfin Web. A capability loader may choose a modern or compatibility browser
-bundle, but every bundle uses the same isolated Jellyfin API and account policy.
-Installed clients remain separate artifacts and may connect to the same backend.
+Jellyfin Web. The same immutable, stateless Cine Pelencho container also serves
+`https://watch.home.datakai.net/`; this is one maintained browser artifact, not
+a second client deployment. Browser same-origin storage keeps household and
+external sessions separate, while Traefik binds each origin's `/jellyfin` path
+to its own Jellyfin instance. A capability loader may choose a modern or
+compatibility browser bundle, but every bundle uses the account policy of the
+backend selected by its origin. Installed clients remain separate artifacts and
+may connect to the same backend.
 No build embeds an account credential or access token.
 
 The external Jellyfin API uses an explicit base path so static Pelencho routes
