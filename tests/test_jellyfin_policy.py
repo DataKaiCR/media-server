@@ -38,6 +38,7 @@ ADMIN_ID = "a" * 32
 HOUSEHOLD_ID = "b" * 32
 RESTRICTED_ID = "c" * 32
 GUEST_ID = "5" * 32
+REMOTE_ID = "6" * 32
 FOLDER_IDS = {
     "movies": "d" * 32,
     "tvshows": "e" * 32,
@@ -157,6 +158,14 @@ class ConfigTest(TemporaryTest):
             encoding="utf-8",
         )
         self.assertEqual(load_config(guest).users[0].role, "guest")
+        remote = self.write_config()
+        remote.write_text(
+            remote.read_text(encoding="utf-8").replace(
+                'role = "household"', 'role = "remote"', 1
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(load_config(remote).users[0].role, "remote")
 
     def test_rejects_public_symlink_external_and_unknown_configuration(self) -> None:
         public = self.write_config(mode=0o644)
@@ -222,7 +231,9 @@ class ConfigTest(TemporaryTest):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ConfigError, "guest, household, or restricted"):
+        with self.assertRaisesRegex(
+            ConfigError, "guest, household, remote, or restricted"
+        ):
             load_config(bad_role)
 
 
@@ -277,6 +288,41 @@ class PolicyTest(TemporaryTest):
         self.assertIsNone(guest.desired["MaxParentalRating"])
         self.assertEqual(guest.desired["BlockUnratedItems"], [])
         self.assertEqual(public_summary(plan)["role_counts"]["guest"], 1)
+
+    def test_remote_role_is_unrestricted_movies_and_series_only(self) -> None:
+        config = policy_config(self.root)
+        config = PolicyConfig(
+            config.base_url,
+            config.api_key_file,
+            config.backup_dir,
+            (*config.users, UserRule("private-remote", "remote")),
+        )
+        rows = users() + [
+            {"Id": REMOTE_ID, "Name": "private-remote", "Policy": unsafe_policy()}
+        ]
+        plan = build_plan(config, rows, folders())
+        remote = next(row for row in plan if row.role == "remote")
+        self.assertEqual(
+            set(remote.desired["EnabledFolders"]),
+            {FOLDER_IDS["movies"], FOLDER_IDS["tvshows"]},
+        )
+        self.assertIsNone(remote.desired["MaxParentalRating"])
+        self.assertEqual(remote.desired["BlockUnratedItems"], [])
+        self.assertTrue(remote.desired["EnableRemoteAccess"])
+        for field in (
+            "IsAdministrator",
+            "EnableContentDeletion",
+            "EnableContentDownloading",
+            "EnableSyncTranscoding",
+            "EnableMediaConversion",
+            "EnablePublicSharing",
+            "EnableSharedDeviceControl",
+            "EnableLiveTvAccess",
+            "EnableLiveTvManagement",
+            "EnableAllChannels",
+        ):
+            self.assertFalse(remote.desired[field], field)
+        self.assertEqual(public_summary(plan)["role_counts"]["remote"], 1)
 
     def test_allows_multiple_folders_per_type_but_rejects_duplicate_ids(self) -> None:
         rows = folders() + [{"CollectionType": "movies", "ItemId": "4" * 32}]

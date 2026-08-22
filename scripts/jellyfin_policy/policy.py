@@ -13,6 +13,7 @@ from .config import PolicyConfig
 _FOLDER_TYPES = {
     "guest": frozenset({"movies", "tvshows", "music"}),
     "household": frozenset({"movies", "tvshows", "music", "books"}),
+    "remote": frozenset({"movies", "tvshows"}),
     "restricted": frozenset({"movies", "tvshows"}),
 }
 _BLOCKED_UNRATED = ["Movie", "Trailer", "Series"]
@@ -104,7 +105,7 @@ def _desired_policy(
         "EnableSyncTranscoding": False,
         "EnableMediaConversion": False,
         "EnablePublicSharing": False,
-        "EnableRemoteAccess": False,
+        "EnableRemoteAccess": role == "remote",
         "EnableRemoteControlOfOtherUsers": False,
         "EnableSharedDeviceControl": False,
         "EnableLiveTvAccess": False,

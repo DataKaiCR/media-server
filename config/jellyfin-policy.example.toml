@@ -12,5 +12,9 @@ name = "household-viewer"
 role = "household"
 
 [[users]]
+name = "remote-viewer"
+role = "remote"
+
+[[users]]
 name = "restricted-viewer"
 role = "restricted"
