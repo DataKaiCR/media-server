@@ -248,6 +248,27 @@ services:
     labels:
       traefik.enable: "false"
 
+  cine-pelencho-web:
+    <<: *common
+    profiles: ["external"]
+    image: localhost/cine-pelencho-web@sha256:d2a20d82438d8db2f1f4637b48cbf6cde44ce9efb624725b00151c3094ad7eb8
+    container_name: cine-pelencho-web
+    networks: [media]
+    expose: ["8080"]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      traefik.enable: "false"
+
   jellyseerr:
     <<: *common
     image: docker.io/fallenbagel/jellyseerr:2.1.0
