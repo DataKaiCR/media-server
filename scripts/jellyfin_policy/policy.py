@@ -11,6 +11,7 @@ from .config import PolicyConfig
 
 
 _FOLDER_TYPES = {
+    "external": frozenset({"movies", "tvshows"}),
     "guest": frozenset({"movies", "tvshows", "music"}),
     "household": frozenset({"movies", "tvshows", "music", "books"}),
     "remote": frozenset({"movies", "tvshows"}),
@@ -41,7 +42,9 @@ class PolicyUpdate:
         )
 
 
-def _folder_ids(rows: list[object]) -> dict[str, list[str]]:
+def _folder_ids(
+    rows: list[object], required_types: frozenset[str]
+) -> dict[str, list[str]]:
     folders: dict[str, list[str]] = {}
     seen_ids: set[str] = set()
     for row in rows:
@@ -55,8 +58,7 @@ def _folder_ids(rows: list[object]) -> dict[str, list[str]]:
             raise PolicyError("Jellyfin returned an invalid folder identifier")
         folders.setdefault(kind, []).append(item_id)
         seen_ids.add(item_id)
-    required = set().union(*_FOLDER_TYPES.values())
-    if not required <= set(folders):
+    if not required_types <= set(folders):
         raise PolicyError("required viewer collection types are unavailable")
     return folders
 
@@ -94,7 +96,7 @@ def _desired_policy(
     desired = dict(original)
     desired.update({
         "IsAdministrator": False,
-        "IsHidden": False,
+        "IsHidden": role == "external",
         "EnableAllFolders": False,
         "EnabledFolders": sorted(
             item_id for kind in _FOLDER_TYPES[role] for item_id in folders[kind]
@@ -105,7 +107,7 @@ def _desired_policy(
         "EnableSyncTranscoding": False,
         "EnableMediaConversion": False,
         "EnablePublicSharing": False,
-        "EnableRemoteAccess": role == "remote",
+        "EnableRemoteAccess": role in {"external", "remote"},
         "EnableRemoteControlOfOtherUsers": False,
         "EnableSharedDeviceControl": False,
         "EnableLiveTvAccess": False,
@@ -132,7 +134,6 @@ def _desired_policy(
 def build_plan(
     config: PolicyConfig, users: list[object], folders: list[object]
 ) -> list[PolicyUpdate]:
-    folder_ids = _folder_ids(folders)
     server_users, _ = _users_by_name(users)
     configured_names = {rule.name.casefold() for rule in config.users}
     non_admin_names = {
@@ -143,6 +144,10 @@ def build_plan(
         raise PolicyError(
             "private policy must enumerate every and only non-administrator account"
         )
+    required_types = frozenset(
+        kind for rule in config.users for kind in _FOLDER_TYPES[rule.role]
+    )
+    folder_ids = _folder_ids(folders, required_types)
     updates: list[PolicyUpdate] = []
     for rule in config.users:
         row = server_users[rule.name.casefold()]

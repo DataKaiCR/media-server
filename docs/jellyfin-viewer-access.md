@@ -14,25 +14,25 @@ issues, CI output, or public logs.
 ## Least-privilege contract
 
 The private policy configuration must enumerate every non-administrator account
-and assign exactly one guest, household, remote, or restricted role. The tool fails
-closed if a configured account is missing, an unknown non-admin appears, the
-server does not have exactly one administrator, or required library types are
-absent.
+and assign exactly one external, guest, household, remote, or restricted role.
+The tool fails closed if a configured account is missing, an unknown non-admin
+appears, the server does not have exactly one administrator, or the library
+types required by the configured roles are absent.
 
-| Capability | Guest | Household viewer | Remote viewer | Restricted viewer |
-| --- | --- | --- | --- | --- |
-| Library access | Explicit current movie, series, and music folders | Explicit current movie, series, music, and book folders | Explicit current movie and series folders | Explicit current movie and series folders |
-| Parental rating | Unrestricted | Unrestricted | Unrestricted | Jellyfin score 10 |
-| Unrated movies, trailers, and series | Allowed | Allowed | Allowed | Blocked |
-| Playback, remux, audio/video transcoding | Allowed | Allowed | Allowed | Allowed |
-| Delete media | Denied | Denied | Denied | Denied |
-| Download, sync transcode, or media conversion | Denied | Denied | Denied | Denied |
-| Public sharing | Denied | Denied | Denied | Denied |
-| Live TV and channel access | Denied | Denied | Denied | Denied |
-| Collection, subtitle, or lyric management | Denied | Denied | Denied | Denied |
-| Shared-device control | Denied | Denied | Denied | Denied |
-| Local login selector | Visible | Visible | Visible | Visible |
-| Remote access | Denied | Denied | Allowed only through an approved isolated entry point | Denied |
+| Capability | Guest | Household viewer | Remote viewer | External viewer | Restricted viewer |
+| --- | --- | --- | --- | --- | --- |
+| Library access | Explicit current movie, series, and music folders | Explicit current movie, series, music, and book folders | Explicit current movie and series folders | Explicit current movie and series folders | Explicit current movie and series folders |
+| Parental rating | Unrestricted | Unrestricted | Unrestricted | Unrestricted | Jellyfin score 10 |
+| Unrated movies, trailers, and series | Allowed | Allowed | Allowed | Allowed | Blocked |
+| Playback, remux, audio/video transcoding | Allowed | Allowed | Allowed | Allowed | Allowed |
+| Delete media | Denied | Denied | Denied | Denied | Denied |
+| Download, sync transcode, or media conversion | Denied | Denied | Denied | Denied | Denied |
+| Public sharing | Denied | Denied | Denied | Denied | Denied |
+| Live TV and channel access | Denied | Denied | Denied | Denied | Denied |
+| Collection, subtitle, or lyric management | Denied | Denied | Denied | Denied | Denied |
+| Shared-device control | Denied | Denied | Denied | Denied | Denied |
+| Login selector | Visible | Visible | Visible | Hidden | Visible |
+| Remote access | Denied | Denied | Approved isolated entry point only | Approved external application plane only | Denied |
 
 Explicit folders prevent a future private library from becoming visible merely
 because it was added to Jellyfin. Guests can use shared audiovisual and music
@@ -44,9 +44,11 @@ allowlist remains authoritative. Device playback stays enabled because official
 television and mobile clients need remux or bounded server transcoding when direct
 play is unavailable.
 
-All viewer roles remain visible in the local login selector so newly created
-passwordless accounts are discoverable. The administrator remains hidden and
-its policy is never generated or updated by this tool.
+Guest, household, remote, and restricted roles remain visible in the household
+login selector so intentionally passwordless LAN accounts are discoverable. The
+external role is always hidden and password-protected on the separate external
+instance. The administrator remains hidden and its policy is never generated or
+updated by this tool.
 
 ## Private configuration
 
@@ -60,8 +62,9 @@ chmod 600 /srv/private-state/jellyfin/policy-api-key
 chmod 700 /srv/private-state/jellyfin
 ```
 
-Use a dedicated Jellyfin API key when available. The URL must be a loopback
-HTTP(S) origin with no credentials, path, query, or fragment. The backup
+Use a dedicated Jellyfin API key when available. The URL must use loopback
+HTTP(S), contain no credentials/query/fragment, and may include one normalized
+Jellyfin base path such as `/jellyfin`. The backup
 directory must also remain outside the repository.
 
 Audit without mutation:
@@ -95,8 +98,9 @@ backup.
    invent a generic account or place a password in Git history or shell logs.
 2. Create the account through the loopback/LAN administrator interface. Use a
    unique temporary password delivered privately unless the operator explicitly
-   chooses passwordless LAN-only access. Remote viewers must have a password and
-   use the `remote` role only after the approved isolated entry point exists.
+   chooses passwordless LAN-only access. Viewers on the separate external
+   instance must have a password and use the hidden `external` role. The visible
+   `remote` role remains only for a separately accepted shared-instance design.
 3. Add the exact account name and role to the private TOML before running the
    policy tool. Until then, the tool intentionally fails because an unknown
    non-admin exists.
@@ -109,8 +113,9 @@ backup.
 Creating a Jellyfin viewer does not grant request-portal access. Import that
 identity separately only when request permissions are intended.
 
-Do not assign the `remote` role before the isolated entry point is accepted.
-MS-CP-5 must validate one remote viewer before other relatives are onboarded.
+Do not assign the `external` role before the isolated external application plane
+exists. MS-CP-5 must validate one external viewer before other relatives are
+onboarded.
 
 ## Renaming an identity
 
