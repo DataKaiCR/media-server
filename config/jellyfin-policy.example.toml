@@ -16,5 +16,9 @@ name = "remote-viewer"
 role = "remote"
 
 [[users]]
+name = "external-viewer"
+role = "external"
+
+[[users]]
 name = "restricted-viewer"
 role = "restricted"

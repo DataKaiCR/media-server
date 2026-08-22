@@ -39,6 +39,7 @@ HOUSEHOLD_ID = "b" * 32
 RESTRICTED_ID = "c" * 32
 GUEST_ID = "5" * 32
 REMOTE_ID = "6" * 32
+EXTERNAL_ID = "7" * 32
 FOLDER_IDS = {
     "movies": "d" * 32,
     "tvshows": "e" * 32,
@@ -166,6 +167,19 @@ class ConfigTest(TemporaryTest):
             encoding="utf-8",
         )
         self.assertEqual(load_config(remote).users[0].role, "remote")
+        external = self.write_config()
+        external.write_text(
+            external.read_text(encoding="utf-8")
+            .replace('role = "household"', 'role = "external"', 1)
+            .replace(
+                'base_url = "http://127.0.0.1:8096"',
+                'base_url = "http://127.0.0.1:8096/jellyfin"',
+            ),
+            encoding="utf-8",
+        )
+        loaded = load_config(external)
+        self.assertEqual(loaded.users[0].role, "external")
+        self.assertEqual(loaded.base_url, "http://127.0.0.1:8096/jellyfin")
 
     def test_rejects_public_symlink_external_and_unknown_configuration(self) -> None:
         public = self.write_config(mode=0o644)
@@ -185,6 +199,16 @@ class ConfigTest(TemporaryTest):
         )
         with self.assertRaisesRegex(ConfigError, "loopback"):
             load_config(external)
+        for bad_path in ("//other", "/../admin", "/api?token=value", "/%2e%2e/admin"):
+            invalid_path = self.write_config()
+            invalid_path.write_text(
+                invalid_path.read_text(encoding="utf-8").replace(
+                    "http://127.0.0.1:8096", "http://127.0.0.1:8096" + bad_path
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "loopback"):
+                load_config(invalid_path)
         unknown = self.write_config(extra='unexpected = "value"\n')
         with self.assertRaisesRegex(ConfigError, "only name and role"):
             load_config(unknown)
@@ -232,7 +256,7 @@ class ConfigTest(TemporaryTest):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(
-            ConfigError, "guest, household, remote, or restricted"
+            ConfigError, "external, guest, household, remote, or restricted"
         ):
             load_config(bad_role)
 
@@ -323,6 +347,38 @@ class PolicyTest(TemporaryTest):
         ):
             self.assertFalse(remote.desired[field], field)
         self.assertEqual(public_summary(plan)["role_counts"]["remote"], 1)
+
+    def test_external_role_is_hidden_and_needs_only_movies_and_tv(self) -> None:
+        base = policy_config(self.root)
+        config = PolicyConfig(
+            base.base_url,
+            base.api_key_file,
+            base.backup_dir,
+            (UserRule("private-external", "external"),),
+        )
+        rows = [
+            {"Id": ADMIN_ID, "Name": "private-admin", "Policy": unsafe_policy(administrator=True)},
+            {"Id": EXTERNAL_ID, "Name": "private-external", "Policy": unsafe_policy()},
+        ]
+        external_folders = [
+            row for row in folders()
+            if row["CollectionType"] in {"movies", "tvshows"}
+        ]
+        plan = build_plan(config, rows, external_folders)
+        policy = plan[0].desired
+
+        self.assertEqual(
+            set(policy["EnabledFolders"]),
+            {FOLDER_IDS["movies"], FOLDER_IDS["tvshows"]},
+        )
+        self.assertTrue(policy["IsHidden"])
+        self.assertTrue(policy["EnableRemoteAccess"])
+        self.assertFalse(policy["IsAdministrator"])
+        self.assertFalse(policy["EnableContentDeletion"])
+        self.assertFalse(policy["EnableContentDownloading"])
+        self.assertEqual(public_summary(plan)["role_counts"], {"external": 1})
+        with self.assertRaisesRegex(PolicyError, "collection types"):
+            build_plan(config, rows, external_folders[:-1])
 
     def test_allows_multiple_folders_per_type_but_rejects_duplicate_ids(self) -> None:
         rows = folders() + [{"CollectionType": "movies", "ItemId": "4" * 32}]

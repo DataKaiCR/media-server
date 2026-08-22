@@ -13,7 +13,15 @@ import urllib.parse
 
 
 _NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,64}$")
-_ROLES = {"guest", "household", "remote", "restricted"}
+_ROLES = {"external", "guest", "household", "remote", "restricted"}
+_BASE_PATH_RE = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
+
+
+def _safe_base_path(value: str) -> bool:
+    return bool(
+        _BASE_PATH_RE.fullmatch(value)
+        and all(segment not in {".", ".."} for segment in value.split("/"))
+    )
 
 
 class ConfigError(ValueError):
@@ -55,7 +63,10 @@ def _loopback_origin(value: object) -> str:
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.path not in {"", "/"}
+        or (
+            parsed.path not in {"", "/"}
+            and not _safe_base_path(parsed.path)
+        )
         or parsed.query
         or parsed.fragment
     ):
@@ -99,7 +110,7 @@ def _user_rules(value: object) -> tuple[UserRule, ...]:
             raise ConfigError("user names must be bounded and contain no controls")
         if role not in _ROLES:
             raise ConfigError(
-                "user roles must be guest, household, remote, or restricted"
+                "user roles must be external, guest, household, remote, or restricted"
             )
         normalized = name.casefold()
         if normalized in seen:
