@@ -642,8 +642,18 @@ class ClientTest(TemporaryTest):
         self.assertNotIn("a" * 32, json.dumps(APIHandler.posts[0][1]))
 
     def test_rejects_external_origins_unsafe_tokens_and_invalid_timeouts(self) -> None:
+        based = JellyfinClient(
+            f"http://127.0.0.1:{self.server.server_port}/jellyfin", self.token
+        )
+        self.assertTrue(based.base_url.endswith("/jellyfin"))
         with self.assertRaisesRegex(ClientError, "loopback"):
             JellyfinClient("https://example.com", self.token)
+        for bad_path in ("//other", "/../admin", "/api?token=value", "/%2e%2e/admin"):
+            with self.assertRaisesRegex(ClientError, "loopback"):
+                JellyfinClient(
+                    f"http://127.0.0.1:{self.server.server_port}{bad_path}",
+                    self.token,
+                )
         linked = self.root / "linked-token"
         linked.symlink_to(self.token)
         with self.assertRaisesRegex(ClientError, "cannot read"):

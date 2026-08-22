@@ -20,6 +20,14 @@ MAX_API_KEY_BYTES = 512
 _USER_ID_RE = re.compile(
     r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$"
 )
+_BASE_PATH_RE = re.compile(r"^/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$")
+
+
+def _safe_base_path(value: str) -> bool:
+    return bool(
+        _BASE_PATH_RE.fullmatch(value)
+        and all(segment not in {".", ".."} for segment in value.split("/"))
+    )
 
 
 class ClientError(RuntimeError):
@@ -62,7 +70,10 @@ def _loopback_origin(value: str) -> str:
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.path not in {"", "/"}
+        or (
+            parsed.path not in {"", "/"}
+            and not _safe_base_path(parsed.path)
+        )
         or parsed.query
         or parsed.fragment
     ):
