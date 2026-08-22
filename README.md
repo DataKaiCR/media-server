@@ -126,12 +126,12 @@ stopped-service backup and client validation. See
 
 ## Jellyfin viewer access
 
-Jellyfin uses separate administrator, guest, household-viewer,
+Jellyfin uses separate administrator, guest, household-viewer, remote-viewer,
 restricted-viewer, and request identities. A private, loopback-only policy tool
 audits every non-admin against explicit current-library access and denies
-deletion, downloads, public
-sharing, Live TV management, shared-device control, and remote access by
-default. The restricted role also limits library types, rating score, and
+deletion, downloads, public sharing, Live TV management, and shared-device
+control. Remote access remains denied by default and is enabled only for the
+movies-and-series-only remote role after an isolated entry point is accepted. The restricted role also limits library types, rating score, and
 unrated video. Application is backup-first, aggregate-only, verified, and rolls
 back failures; account names and identifiers never enter repository state or
 logs. See [docs/jellyfin-viewer-access.md](docs/jellyfin-viewer-access.md).
