@@ -59,6 +59,22 @@ metadata, but strong credentials and hidden profiles prevent account switching.
 If future policy requires one family to be unable to infer any other external
 identity or activity, that is a separate per-family-instance decision.
 
+## Routine identity onboarding
+
+The onboarding contract is public; only its live inputs and receipts are private.
+Use the aggregate-only, config-driven procedure in
+[external viewer onboarding](external-viewer-onboarding.md) to create a hidden
+Movies/TV-only Jellyfin account, enforce the private identity authority, import
+the exact user into Jellyseerr with request-only permission, verify both logins,
+and roll back a partial failure. Account names, credentials, IDs, Tailnet
+identities, and API keys remain mode-`0600` runtime state outside Git.
+
+An accepted individually issued gateway share is a prerequisite, not an account
+creation side effect. When Tailnet policy already covers accepted shared
+identities only at gateway TCP 443, adding an application user requires no
+Tailnet policy writer. Revocation still removes the individual share and the two
+application identities separately.
+
 ## Browser and API boundary
 
 `https://watch.external.datakai.net/` serves Cine Pelencho rather than stock
@@ -89,7 +105,7 @@ They are distinct from household `*.home.datakai.net` names and identify the
 external application plane consistently. DNS may publish a DNS-only answer to
 the gateway's stable Tailscale address so recipients in other tailnets can
 resolve it. The address remains non-publicly routable; Tailscale machine sharing
-and exact grants remain the network authorization boundary. Traefik obtains
+and gateway-only grants remain the network authorization boundary. Traefik obtains
 certificates through DNS-01 and terminates TLS on a dedicated external backend.
 Public HTTP forwarding, Cloudflare proxying, Funnel, and direct Gruff exposure
 remain prohibited.

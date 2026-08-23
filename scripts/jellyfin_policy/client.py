@@ -34,6 +34,19 @@ class ClientError(RuntimeError):
     """A bounded Jellyfin API operation failed."""
 
 
+class _RejectRedirect(urllib.request.HTTPRedirectHandler):
+    def http_error_302(
+        self, _request: object, _file: object, _code: int, _message: str,
+        _headers: object,
+    ) -> None:
+        raise ClientError("API redirects are not allowed")
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
 def _api_key(path: Path) -> str:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
@@ -134,7 +147,8 @@ class JellyfinClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            opener = urllib.request.build_opener(_RejectRedirect())
+            with opener.open(request, timeout=self.timeout) as response:
                 if method == "POST" and response.status in {200, 204}:
                     raw = response.read(MAX_RESPONSE_BYTES + 1)
                     if raw:

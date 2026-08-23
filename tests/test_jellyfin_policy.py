@@ -20,7 +20,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from jellyfin_policy.client import ClientError, JellyfinClient, MAX_RESPONSE_BYTES
+from jellyfin_policy.client import (
+    ClientError,
+    JellyfinClient,
+    MAX_RESPONSE_BYTES,
+    _RejectRedirect,
+)
 from jellyfin_policy.config import ConfigError, PolicyConfig, UserRule, load_config
 from jellyfin_policy.policy import PolicyError, build_plan, public_summary
 from jellyfin_policy.service import ApplyError, apply_plan
@@ -642,6 +647,10 @@ class ClientTest(TemporaryTest):
         self.assertNotIn("a" * 32, json.dumps(APIHandler.posts[0][1]))
 
     def test_rejects_external_origins_unsafe_tokens_and_invalid_timeouts(self) -> None:
+        with self.assertRaisesRegex(ClientError, "redirects"):
+            _RejectRedirect().http_error_302(
+                object(), object(), 302, "Found", {}
+            )
         based = JellyfinClient(
             f"http://127.0.0.1:{self.server.server_port}/jellyfin", self.token
         )
