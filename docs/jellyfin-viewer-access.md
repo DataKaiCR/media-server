@@ -113,6 +113,14 @@ backup.
 Creating a Jellyfin viewer does not grant request-portal access. Import that
 identity separately only when request permissions are intended.
 
+For the accepted separate external Jellyfin/Jellyseerr pair, prefer the
+[external viewer onboarding](external-viewer-onboarding.md) tool over manual UI
+replication. It consumes private mode-`0600` identity inputs, proves the current
+external baseline is clean, creates and policy-enforces one hidden viewer,
+imports only its exact Jellyfin ID with request-only permission, authenticates
+both applications, and rolls back a partial failure. Its public output remains
+aggregate-only.
+
 Do not assign the `external` role before the isolated external application plane
 exists. MS-CP-5 must validate one external viewer before other relatives are
 onboarded.
