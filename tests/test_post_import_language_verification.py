@@ -165,12 +165,18 @@ class PostImportLanguageVerificationTest(unittest.TestCase):
         self.jellyseerr_key.chmod(0o600)
         self.sample = self.movies / "private-test.mkv"
         self.sample.write_bytes(b"synthetic-media")
+        self.ffprobe_stub = self.root / "ffprobe"
+        self.ffprobe_stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        self.ffprobe_stub.chmod(0o700)
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def write_config(self, port=1, *, extra="", mapping_extra=""):
+    def write_config(
+        self, port=1, *, extra="", mapping_extra="", ffprobe_command=None
+    ):
         path = self.root / "config.toml"
+        command = ffprobe_command or self.ffprobe_stub
         path.write_text(
             f'''version = 1
 report_dir = {json.dumps(str(self.reports))}
@@ -181,7 +187,7 @@ max_files = 100
 parser_timeout_seconds = 5
 max_parser_output_bytes = 65536
 max_parser_memory_bytes = 536870912
-ffprobe_command = {json.dumps(shutil.which("ffprobe") or "/usr/bin/ffprobe")}
+ffprobe_command = {json.dumps(str(command))}
 latino_profile_ids = [7]
 
 [radarr]
@@ -394,7 +400,9 @@ host_root = {json.dumps(str(self.movies))}
     def test_real_ffprobe_reads_synthetic_media_without_mutating_it(self):
         if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
             self.skipTest("ffmpeg and ffprobe are required")
-        config = load_language_config(self.write_config())
+        config = load_language_config(
+            self.write_config(ffprobe_command=shutil.which("ffprobe"))
+        )
         output = self.movies / "real.mkv"
         command = [
             "ffmpeg",
@@ -462,7 +470,9 @@ host_root = {json.dumps(str(self.movies))}
         ]
         subprocess.run(command, check=True, timeout=30)
         with FakeServer() as port:
-            config_path = self.write_config(port)
+            config_path = self.write_config(
+                port, ffprobe_command=shutil.which("ffprobe")
+            )
             stdout = io.StringIO()
             with patch(
                 "sys.argv", ["language-verification-audit", "--config", str(config_path)]
