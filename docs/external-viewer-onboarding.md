@@ -16,9 +16,11 @@ Keep these values only in protected runtime state:
 - policy snapshots, database backups, receipts containing private IDs, and
   request history.
 
-The tool prompts for each viewer's identity and password on the controlling
-terminal and keeps them only in memory. Stable API keys and policy state remain
-in mode-`0600` files outside Git. Standard operation output contains counts and
+By default, the tool prompts for each viewer's identity and password on the
+controlling terminal and keeps them only in memory. Optional Bitwarden mode can
+generate or save the credential in an unlocked vault without placing secrets in
+arguments or temporary files. Stable API keys and policy state remain in
+mode-`0600` files outside Git. Standard operation output contains counts and
 booleans, never names, IDs, paths, or credentials.
 
 ## Scope
@@ -38,8 +40,9 @@ application plane. It:
 7. verifies Jellyseerr authentication and writes an aggregate private receipt.
 
 It does **not** create or share a Tailscale machine, change Tailnet policy,
-create/revoke API keys, write to a password manager, approve a request, or test
-real client playback. Those remain explicit operator lifecycle steps.
+create/revoke API keys, approve a request, or test real client playback. It
+writes to a password manager only when the operator explicitly selects one of
+the `--bitwarden` modes.
 
 ## Prerequisites
 
@@ -54,8 +57,8 @@ Before onboarding:
   private policy and the aggregate audit is clean;
 - Jellyseerr contains exactly one administrator plus the same request-only
   external identities, with new-user auto-provisioning disabled; and
-- a unique credential has already been generated and stored in an approved
-  secret manager; the operator will paste it into a hidden terminal prompt.
+- either a unique credential is available in an approved secret manager or the
+  operator intends to generate and store one with Bitwarden mode.
 
 Take the normal stopped-service/database backup when the operational change
 window requires full application-state rollback. The tool also creates a
@@ -172,6 +175,37 @@ application immediately while still running the same fail-closed checks, use:
 The viewer username and hidden password are never command-line arguments or a
 persisted credential file. `--apply` includes the same fail-closed preflight
 before any mutation.
+
+## Optional Bitwarden storage
+
+The host must have the `bw` CLI logged in. The onboarding script handles a
+locked vault with its own hidden master-password prompt and retains the returned
+session token only in child-process memory.
+
+Generate a 32-character password and store it with the new viewer:
+
+```bash
+./scripts/external-viewer-onboard.py --bitwarden generate
+```
+
+Or enter an existing password through the hidden prompt and save it:
+
+```bash
+./scripts/external-viewer-onboard.py --bitwarden save
+```
+
+Both modes first refuse duplicate exact viewer items and run application
+preflight. The Bitwarden item is created and retrieved for exact verification
+after preflight succeeds but before application mutation, closing the crash gap
+where an account could exist without a recoverable generated password. Item JSON
+is base64-encoded into `bw create item` over standard input; usernames,
+passwords, and vault item IDs do not enter command arguments, console output, or
+receipts.
+
+If onboarding fails after the vault write, the item is retained for bounded or
+ambiguous recovery rather than risking loss of the only usable password. Remove
+it manually only after confirming application rollback. Without `--bitwarden`,
+the existing memory-only behavior is unchanged.
 
 Success reports one policy account updated, Jellyfin authentication passing,
 Movies/TV as the only effective collection types, zero public profiles, and

@@ -371,6 +371,9 @@ def _publish_result(context: _ApplyContext) -> dict[str, object]:
         "jellyseerr_permission": _REQUEST_PERMISSION,
         "jellyseerr_request_only_count": len(context.augmented.users),
         "rollback_required": False,
+        "credential_storage": context.config.credential_storage,
+        "credentials_persisted": context.config.credential_storage == "bitwarden",
+        "account_names_persisted": context.config.credential_storage == "bitwarden",
     }
     rendered = (json.dumps(result, sort_keys=True) + "\n").encode("utf-8")
     _write_private_exclusive(context.receipt_path, rendered)
@@ -426,6 +429,8 @@ def apply(
     jellyfin: JellyfinOperations,
     jellyseerr: JellyseerrOperations,
 ) -> dict[str, object]:
+    if config.credential_storage not in {"bitwarden", "memory"}:
+        raise OnboardingError("credential storage result is invalid")
     context = _prepare_apply(config, policy, credential, jellyfin, jellyseerr)
     state = _MutationState()
     try:

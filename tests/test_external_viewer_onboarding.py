@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+from dataclasses import replace
 import io
 import json
 from pathlib import Path
@@ -562,6 +563,22 @@ class FakeJellyseerr:
         return 32
 
 
+class FakeVault:
+    def __init__(self, password: str) -> None:
+        self.password = password
+        self.available: list[str] = []
+        self.stored: list[ViewerCredential] = []
+
+    def generate_credential(self, username: str) -> ViewerCredential:
+        return ViewerCredential(username, self.password)
+
+    def assert_available(self, username: str) -> None:
+        self.available.append(username)
+
+    def store(self, credential: ViewerCredential) -> None:
+        self.stored.append(credential)
+
+
 class CLITest(TemporaryTest):
     def fake_clients(self) -> tuple[FakeJellyfin, FakeJellyseerr]:
         jellyfin = FakeJellyfin(self.compliant_users(), self.credential().password)
@@ -608,6 +625,107 @@ class CLITest(TemporaryTest):
         prompt.assert_called_once_with()
         self.assertFalse((self.root / "new-viewer.json").exists())
         self.assertNotIn("private-new", output.getvalue())
+
+    def test_bitwarden_save_mode_uses_the_hidden_prompt(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        vault = FakeVault(self.credential().password)
+        with patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch.object(
+            onboarding_cli, "_prompt_credential", return_value=self.credential()
+        ) as prompt, patch.object(
+            onboarding_cli.BitwardenVault, "open", return_value=vault
+        ):
+            credential, selected_vault = onboarding_cli._credential(
+                self.onboarding(), "save"
+            )
+        prompt.assert_called_once_with()
+        self.assertEqual(credential, self.credential())
+        self.assertIs(selected_vault, vault)
+        self.assertEqual(vault.available, ["private-new"])
+
+    def test_bitwarden_generation_is_stored_after_preflight_and_recorded(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        jellyfin, jellyseerr = self.fake_clients()
+        vault = FakeVault(self.credential().password)
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch("builtins.input", return_value="private-new"), patch.object(
+            onboarding_cli.BitwardenVault, "open", return_value=vault
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config",
+                str(self.onboarding_path),
+                "--apply",
+                "--bitwarden",
+                "generate",
+            ])
+        self.assertEqual(status, 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["credential_storage"], "bitwarden")
+        self.assertTrue(result["credentials_persisted"])
+        self.assertTrue(result["account_names_persisted"])
+        self.assertEqual(vault.available, ["private-new"])
+        self.assertEqual(vault.stored, [self.credential()])
+        self.assertNotIn(self.credential().password, output.getvalue())
+        attempt = next(path for path in self.state.iterdir() if path.is_dir())
+        receipt = json.loads(
+            (attempt / "external-viewer-onboarding-receipt.json").read_text()
+        )
+        self.assertEqual(receipt["credential_storage"], "bitwarden")
+        self.assertTrue(receipt["credentials_persisted"])
+
+    def test_bitwarden_is_not_stored_when_preflight_fails(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        jellyfin, jellyseerr = self.fake_clients()
+        jellyfin.rows[1]["Policy"]["EnableContentDownloading"] = True
+        vault = FakeVault(self.credential().password)
+        errors = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch("builtins.input", return_value="private-new"), patch.object(
+            onboarding_cli.BitwardenVault, "open", return_value=vault
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stderr(errors):
+            status = onboarding_cli.main([
+                "--config",
+                str(self.onboarding_path),
+                "--apply",
+                "--bitwarden",
+                "generate",
+            ])
+        self.assertEqual(status, 1)
+        self.assertEqual(vault.stored, [])
+        self.assertNotIn("private-new", errors.getvalue())
 
     def test_apply_uses_a_fresh_private_attempt_directory(self) -> None:
         jellyfin, jellyseerr = self.fake_clients()
@@ -738,6 +856,21 @@ class ServiceTest(TemporaryTest):
         )
         return jellyfin, jellyseerr
 
+    def test_invalid_credential_storage_is_refused_before_mutation(self) -> None:
+        jellyfin, jellyseerr = self.clients()
+        before = jellyfin.users()
+        with self.assertRaisesRegex(OnboardingError, "storage result"):
+            apply(
+                replace(
+                    self.onboarding(), credential_storage="private-file"
+                ),
+                self.policy(),
+                self.credential(),
+                jellyfin,
+                jellyseerr,
+            )
+        self.assertEqual(jellyfin.users(), before)
+
     def test_preflight_is_aggregate_only_and_does_not_mutate(self) -> None:
         jellyfin, jellyseerr = self.clients()
         before = jellyfin.users()
@@ -759,6 +892,9 @@ class ServiceTest(TemporaryTest):
             self.onboarding(), self.policy(), self.credential(), jellyfin, jellyseerr
         )
         self.assertTrue(result["applied"])
+        self.assertEqual(result["credential_storage"], "memory")
+        self.assertFalse(result["credentials_persisted"])
+        self.assertFalse(result["account_names_persisted"])
         self.assertEqual(result["policy_accounts_updated"], 1)
         self.assertEqual(result["jellyseerr_permission"], 32)
         self.assertEqual(len(jellyfin.rows), 3)

@@ -10,10 +10,11 @@ from pathlib import Path
 import sys
 
 from jellyfin_policy.client import ClientError
-from jellyfin_policy.config import ConfigError, load_config
+from jellyfin_policy.config import ConfigError, PolicyConfig, load_config
 from jellyfin_policy.policy import PolicyError
 from jellyfin_policy.service import ApplyError
 
+from .bitwarden import BitwardenError, BitwardenVault
 from .client import ExternalJellyfinClient, JellyseerrClient, OnboardingClientError
 from .config import (
     OnboardingConfig,
@@ -70,6 +71,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--apply",
         action="store_true",
         help="create, enforce, import, authenticate, and verify one external viewer",
+    )
+    parser.add_argument(
+        "--bitwarden",
+        choices=("generate", "save"),
+        help=(
+            "generate or save the viewer password in a Bitwarden vault"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -194,10 +202,29 @@ def _prompt_credential() -> ViewerCredential:
     return viewer_credential(username, password)
 
 
-def _credential(config: OnboardingConfig) -> ViewerCredential:
+def _credential(
+    config: OnboardingConfig, bitwarden_mode: str | None
+) -> tuple[ViewerCredential, BitwardenVault | None]:
+    if bitwarden_mode is None:
+        if config.credential_file is not None:
+            return load_viewer_credential(config.credential_file), None
+        return _prompt_credential(), None
     if config.credential_file is not None:
-        return load_viewer_credential(config.credential_file)
-    return _prompt_credential()
+        raise BitwardenError(
+            "Bitwarden mode cannot be combined with credential_file"
+        )
+    if not _interactive():
+        raise BitwardenError("Bitwarden onboarding requires an interactive terminal")
+    if bitwarden_mode == "save":
+        credential = _prompt_credential()
+    else:
+        username = input("Viewer username: ")
+        credential = viewer_credential(username, "A" * 12)
+    vault = BitwardenVault.open(interactive=True)
+    if bitwarden_mode == "generate":
+        credential = vault.generate_credential(credential.username)
+    vault.assert_available(credential.username)
+    return credential, vault
 
 
 def _confirm_apply() -> bool:
@@ -205,24 +232,54 @@ def _confirm_apply() -> bool:
     return answer.strip().casefold() in {"y", "yes"}
 
 
+def _apply_viewer(
+    config: OnboardingConfig,
+    policy: PolicyConfig,
+    credential: ViewerCredential,
+    clients: tuple[ExternalJellyfinClient, JellyseerrClient],
+    vault: BitwardenVault | None,
+) -> dict[str, object]:
+    jellyfin, jellyseerr = clients
+    preflight(policy, credential, jellyfin, jellyseerr)
+    storage = "memory"
+    if vault is not None:
+        vault.store(credential)
+        storage = "bitwarden"
+    try:
+        return apply(
+            create_attempt_config(config, credential_storage=storage),
+            policy,
+            credential,
+            jellyfin,
+            jellyseerr,
+        )
+    except OnboardingError as error:
+        if vault is not None:
+            raise OnboardingError(
+                "onboarding failed; Bitwarden credential retained for recovery"
+            ) from error
+        raise
+
+
 def _operate(config: OnboardingConfig, args: argparse.Namespace) -> None:
-    credential = _credential(config)
+    credential, vault = _credential(config, args.bitwarden)
     policy = load_config(config.policy_config_file)
     jellyfin = ExternalJellyfinClient(policy.base_url, policy.api_key_file)
     jellyseerr = JellyseerrClient(
         config.jellyseerr_base_url, config.jellyseerr_api_key_file
     )
+    clients = (jellyfin, jellyseerr)
     if args.apply:
-        result = apply(
-            create_attempt_config(config), policy, credential, jellyfin, jellyseerr
+        result = _apply_viewer(
+            config, policy, credential, clients, vault
         )
         print(json.dumps(result, sort_keys=True))
         return
     result = preflight(policy, credential, jellyfin, jellyseerr)
     print(json.dumps(result, sort_keys=True), flush=True)
     if _interactive() and _confirm_apply():
-        result = apply(
-            create_attempt_config(config), policy, credential, jellyfin, jellyseerr
+        result = _apply_viewer(
+            config, policy, credential, clients, vault
         )
         print(json.dumps(result, sort_keys=True))
 
@@ -232,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config_path = _config_path(args.config, setup=args.setup)
         if args.setup:
+            if args.bitwarden is not None:
+                raise BitwardenError("Bitwarden mode cannot be used during setup")
             print(json.dumps(_setup(config_path), sort_keys=True))
             return 0
         if not config_path.exists():
@@ -244,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (
         ApplyError,
+        BitwardenError,
         ClientError,
         ConfigError,
         OnboardingClientError,
