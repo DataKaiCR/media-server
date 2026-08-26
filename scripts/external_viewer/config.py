@@ -248,6 +248,39 @@ def create_attempt_config(config: OnboardingConfig) -> OnboardingConfig:
     return replace(config, state_dir=attempt)
 
 
+def _write_onboarding_config(
+    path: Path, document: bytes, *, replace_existing: bool
+) -> None:
+    stage: Path | None = None
+    try:
+        if replace_existing:
+            descriptor, stage_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=path.parent
+            )
+            stage = Path(stage_name)
+            os.fchmod(descriptor, 0o600)
+        else:
+            flags = (
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0)
+            )
+            descriptor = os.open(path, flags, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(document)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if stage is not None:
+            os.replace(stage, path)
+            stage = None
+    except OSError as error:
+        raise OnboardingConfigError("cannot create onboarding configuration") from error
+    finally:
+        if stage is not None:
+            stage.unlink(missing_ok=True)
+
+
 def create_onboarding_config(
     path: Path,
     *,
@@ -255,18 +288,21 @@ def create_onboarding_config(
     jellyseerr_base_url: str,
     jellyseerr_api_key_file: Path,
     state_dir: Path,
+    replace_existing: bool = False,
 ) -> None:
     config_path = _absolute_path(str(path), "onboarding configuration")
-    policy_path = _absolute_path(
+    policy_path = _private_file_path(
         str(policy_config_file), "jellyfin_policy_config"
     )
-    jellyseerr_key_path = _absolute_path(
+    jellyseerr_key_path = _private_file_path(
         str(jellyseerr_api_key_file), "jellyseerr_api_key_file"
     )
     state_path = _absolute_path(str(state_dir), "state_dir")
     base_url = _jellyseerr_origin(jellyseerr_base_url)
     if config_path.exists():
-        raise OnboardingConfigError("onboarding configuration already exists")
+        _read_private_file(config_path, "onboarding configuration")
+        if not replace_existing:
+            raise OnboardingConfigError("onboarding configuration already exists")
     private_paths = (
         config_path,
         policy_path,
@@ -287,12 +323,6 @@ def create_onboarding_config(
         f"{json.dumps(str(jellyseerr_key_path), ensure_ascii=False)}\n"
         f"state_dir = {json.dumps(str(state_path), ensure_ascii=False)}\n"
     ).encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(config_path, flags, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(document)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except OSError as error:
-        raise OnboardingConfigError("cannot create onboarding configuration") from error
+    _write_onboarding_config(
+        config_path, document, replace_existing=replace_existing
+    )

@@ -104,31 +104,78 @@ def _prompt_path(label: str, default: Path) -> Path:
     return _absolute(Path(_prompt_value(label, rendered)))
 
 
+def _prompt_policy(default: Path) -> Path:
+    while True:
+        path = _prompt_path("Jellyfin policy config", default)
+        try:
+            policy = load_config(path)
+            ExternalJellyfinClient(policy.base_url, policy.api_key_file)
+            return path
+        except (ClientError, ConfigError):
+            print(
+                "Jellyfin policy or its API-key file is unavailable; try again.",
+                file=sys.stderr,
+            )
+
+
+def _prompt_jellyseerr(
+    default_url: str, default_key: Path
+) -> tuple[str, Path]:
+    while True:
+        url = _prompt_value("Jellyseerr loopback API URL", default_url)
+        key_path = _prompt_path("Jellyseerr API key file", default_key)
+        try:
+            JellyseerrClient(url, key_path)
+            return url, key_path
+        except (OnboardingClientError, OnboardingConfigError):
+            print(
+                "Jellyseerr URL or API-key file is unavailable; try again.",
+                file=sys.stderr,
+            )
+
+
 def _setup(path: Path) -> dict[str, object]:
     if not _interactive():
         raise OnboardingConfigError("setup requires an interactive terminal")
-    policy_path = _prompt_path(
-        "Jellyfin policy config",
-        Path("/srv/private-state/jellyfin-external/policy.toml"),
+    existed = path.exists()
+    current = None
+    if existed:
+        try:
+            current = load_onboarding_config(path)
+        except OnboardingConfigError:
+            pass
+    policy_default = (
+        current.policy_config_file
+        if current is not None
+        else Path("/srv/private-state/jellyfin-external/policy.toml")
     )
-    jellyseerr_url = _prompt_value(
-        "Jellyseerr loopback API URL",
-        "http://127.0.0.1:15055/api/v1",
+    policy_path = _prompt_policy(policy_default)
+    url_default = (
+        current.jellyseerr_base_url
+        if current is not None
+        else "http://127.0.0.1:15055/api/v1"
     )
-    jellyseerr_key_path = _prompt_path(
-        "Jellyseerr API key file",
-        Path("/srv/private-state/jellyseerr-external/api-key"),
+    key_default = (
+        current.jellyseerr_api_key_file
+        if current is not None
+        else Path("/srv/private-state/jellyseerr-external/api-key")
     )
-    state_dir = _prompt_path("Onboarding state directory", DEFAULT_STATE_DIR)
+    jellyseerr_url, jellyseerr_key_path = _prompt_jellyseerr(
+        url_default, key_default
+    )
+    state_default = current.state_dir if current is not None else DEFAULT_STATE_DIR
+    state_dir = _prompt_path("Onboarding state directory", state_default)
     create_onboarding_config(
         path,
         policy_config_file=policy_path,
         jellyseerr_base_url=jellyseerr_url,
         jellyseerr_api_key_file=jellyseerr_key_path,
         state_dir=state_dir,
+        replace_existing=existed,
     )
     return {
-        "configuration_created": True,
+        "configuration_created": not existed,
+        "configuration_updated": existed,
         "credentials_persisted": False,
         "next_step": "run_preflight_or_apply",
     }
