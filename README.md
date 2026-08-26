@@ -137,8 +137,10 @@ and unrated video. Application is backup-first, aggregate-only, verified, and
 rolls back failures; account names and identifiers never enter repository state
 or logs. See [docs/jellyfin-viewer-access.md](docs/jellyfin-viewer-access.md).
 The public-safe [external viewer onboarding runbook](docs/external-viewer-onboarding.md)
-and script create and verify one isolated Jellyfin/Jellyseerr identity from
-private runtime inputs.
+and interactive script create and verify one isolated Jellyfin/Jellyseerr
+identity. One-time `--setup` installs a stable private environment config;
+each run prompts for the viewer name and hidden password without persisting
+those credentials.
 
 Remote-family access remains discovery-gated. Exact television platforms,
 client availability, VPN support, household network conditions, and Gruff's

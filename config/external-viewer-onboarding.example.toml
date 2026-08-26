@@ -1,8 +1,8 @@
 version = 1
 
-# All referenced files and directories are private runtime state outside Git.
+# This stable environment config contains no per-viewer credentials. The CLI
+# prompts privately for each new viewer. All paths remain outside Git.
 jellyfin_policy_config = "/srv/private-state/jellyfin-external/policy.toml"
-credential_file = "/srv/private-state/jellyfin-external/new-viewer.json"
 jellyseerr_base_url = "http://127.0.0.1:15055/api/v1"
 jellyseerr_api_key_file = "/srv/private-state/jellyseerr-external/api-key"
-state_dir = "/srv/private-state/jellyfin-external/onboarding/current"
+state_dir = "/srv/private-state/jellyfin-external/onboarding"
