@@ -28,6 +28,8 @@ from external_viewer.config import (
     OnboardingConfig,
     OnboardingConfigError,
     ViewerCredential,
+    create_attempt_config,
+    create_onboarding_config,
     load_onboarding_config,
     load_viewer_credential,
 )
@@ -201,6 +203,60 @@ class ConfigTest(TemporaryTest):
                 self.credential_path.write_text(json.dumps(document), encoding="utf-8")
                 with self.assertRaises(OnboardingConfigError):
                     self.credential()
+
+    def test_stable_config_may_prompt_and_uses_fresh_attempt_directories(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        config = self.onboarding()
+        self.assertIsNone(config.credential_file)
+        first = create_attempt_config(config)
+        second = create_attempt_config(config)
+        self.assertNotEqual(first.state_dir, second.state_dir)
+        self.assertEqual(first.state_dir.parent, self.state)
+        self.assertEqual(first.state_dir.stat().st_mode & 0o777, 0o700)
+
+    def test_setup_creates_private_stable_configuration(self) -> None:
+        config_path = self.root / "operator-config" / "onboarding.toml"
+        state_dir = self.root / "operator-state"
+        create_onboarding_config(
+            config_path,
+            policy_config_file=self.policy_path,
+            jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+            jellyseerr_api_key_file=self.jellyseerr_key,
+            state_dir=state_dir,
+        )
+        config = load_onboarding_config(config_path)
+        self.assertIsNone(config.credential_file)
+        self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(config_path.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(state_dir.stat().st_mode & 0o777, 0o700)
+        with self.assertRaisesRegex(OnboardingConfigError, "already exists"):
+            create_onboarding_config(
+                config_path,
+                policy_config_file=self.policy_path,
+                jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+                jellyseerr_api_key_file=self.jellyseerr_key,
+                state_dir=state_dir,
+            )
+
+    def test_setup_does_not_change_an_existing_parent_directory_mode(self) -> None:
+        shared_parent = self.root / "shared-config"
+        shared_parent.mkdir(mode=0o755)
+        state_dir = self.root / "separate-private-state"
+        create_onboarding_config(
+            shared_parent / "onboarding.toml",
+            policy_config_file=self.policy_path,
+            jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+            jellyseerr_api_key_file=self.jellyseerr_key,
+            state_dir=state_dir,
+        )
+        self.assertEqual(shared_parent.stat().st_mode & 0o777, 0o755)
 
 
 class FakeResponse:
@@ -470,6 +526,10 @@ class FakeJellyseerr:
 
 
 class CLITest(TemporaryTest):
+    def fake_clients(self) -> tuple[FakeJellyfin, FakeJellyseerr]:
+        jellyfin = FakeJellyfin(self.compliant_users(), self.credential().password)
+        return jellyfin, FakeJellyseerr(jellyfin)
+
     def test_preflight_output_is_aggregate_only(self) -> None:
         jellyfin = FakeJellyfin(self.compliant_users(), self.credential().password)
         jellyseerr = FakeJellyseerr(jellyfin)
@@ -487,6 +547,109 @@ class CLITest(TemporaryTest):
         self.assertTrue(result["ready"])
         self.assertNotIn("private-new", output.getvalue())
         self.assertNotIn(NEW_ID, output.getvalue())
+
+    def test_prompts_for_each_viewer_without_persisting_credentials(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        jellyfin, jellyseerr = self.fake_clients()
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_prompt_credential", return_value=self.credential()
+        ) as prompt, patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main(["--config", str(self.onboarding_path)])
+        self.assertEqual(status, 0)
+        prompt.assert_called_once_with()
+        self.assertFalse((self.root / "new-viewer.json").exists())
+        self.assertNotIn("private-new", output.getvalue())
+
+    def test_apply_uses_a_fresh_private_attempt_directory(self) -> None:
+        jellyfin, jellyseerr = self.fake_clients()
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config", str(self.onboarding_path), "--apply"
+            ])
+        self.assertEqual(status, 0)
+        attempts = [path for path in self.state.iterdir() if path.is_dir()]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0].stat().st_mode & 0o777, 0o700)
+        self.assertTrue(
+            (attempts[0] / "external-viewer-onboarding-receipt.json").exists()
+        )
+
+    def test_guided_preflight_reuses_prompted_credential_for_apply(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        jellyfin, jellyseerr = self.fake_clients()
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_prompt_credential", return_value=self.credential()
+        ) as prompt, patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch.object(
+            onboarding_cli, "_confirm_apply", return_value=True
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main(["--config", str(self.onboarding_path)])
+        self.assertEqual(status, 0)
+        prompt.assert_called_once_with()
+        results = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([row.get("ready") for row in results], [True, False])
+        self.assertTrue(results[1]["applied"])
+
+    def test_hidden_prompt_requires_matching_passwords(self) -> None:
+        with patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch("builtins.input", return_value="private-new"), patch.object(
+            onboarding_cli.getpass,
+            "getpass",
+            side_effect=["A" * 24, "B" * 24],
+        ), self.assertRaisesRegex(OnboardingConfigError, "do not match"):
+            onboarding_cli._prompt_credential()
+
+    def test_setup_writes_the_default_shape_without_a_credential_file(self) -> None:
+        config_path = self.root / "accessible" / "onboarding.toml"
+        state_dir = self.root / "setup-state"
+        output = io.StringIO()
+        answers = [
+            str(self.policy_path),
+            "http://127.0.0.1:15055/api/v1",
+            str(self.jellyseerr_key),
+            str(state_dir),
+        ]
+        with patch.object(onboarding_cli, "_interactive", return_value=True), patch(
+            "builtins.input", side_effect=answers
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config", str(config_path), "--setup"
+            ])
+        self.assertEqual(status, 0)
+        self.assertTrue(json.loads(output.getvalue())["configuration_created"])
+        config = load_onboarding_config(config_path)
+        self.assertIsNone(config.credential_file)
 
     def test_failure_does_not_print_private_path_or_identity(self) -> None:
         output = io.StringIO()
