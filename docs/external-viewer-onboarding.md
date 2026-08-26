@@ -114,6 +114,11 @@ Setup asks for only the deployment-specific values that cannot be inferred:
 3. the existing private Jellyseerr API-key file; and
 4. the directory under which attempt receipts and backups should be retained.
 
+The policy and both API-key files must already exist. Setup validates their
+permissions and key shapes before saving anything and reprompts instead of
+creating a broken config. Rerun `--setup` to atomically repair an existing
+configuration; valid current values become the displayed defaults.
+
 Pressing Enter accepts each displayed default. By default, the script writes the
 mode-`0600` stable configuration to
 `~/.config/cine-pelencho/external-viewer-onboarding.toml` and creates a

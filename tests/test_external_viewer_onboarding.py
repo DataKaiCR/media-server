@@ -245,6 +245,43 @@ class ConfigTest(TemporaryTest):
                 state_dir=state_dir,
             )
 
+    def test_setup_refuses_missing_references_before_writing_config(self) -> None:
+        config_path = self.root / "missing-reference" / "onboarding.toml"
+        with self.assertRaisesRegex(OnboardingConfigError, "cannot read"):
+            create_onboarding_config(
+                config_path,
+                policy_config_file=self.root / "missing-policy.toml",
+                jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+                jellyseerr_api_key_file=self.jellyseerr_key,
+                state_dir=self.root / "unused-state",
+            )
+        self.assertFalse(config_path.exists())
+
+    def test_setup_can_atomically_repair_an_existing_config(self) -> None:
+        config_path = self.root / "repair-config" / "onboarding.toml"
+        first_state = self.root / "first-state"
+        second_state = self.root / "second-state"
+        create_onboarding_config(
+            config_path,
+            policy_config_file=self.policy_path,
+            jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+            jellyseerr_api_key_file=self.jellyseerr_key,
+            state_dir=first_state,
+        )
+        create_onboarding_config(
+            config_path,
+            policy_config_file=self.policy_path,
+            jellyseerr_base_url="http://127.0.0.1:15055/api/v1",
+            jellyseerr_api_key_file=self.jellyseerr_key,
+            state_dir=second_state,
+            replace_existing=True,
+        )
+        self.assertEqual(
+            load_onboarding_config(config_path).state_dir, second_state
+        )
+        self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(config_path.parent.glob(".onboarding.toml.*")), [])
+
     def test_setup_does_not_change_an_existing_parent_directory_mode(self) -> None:
         shared_parent = self.root / "shared-config"
         shared_parent.mkdir(mode=0o755)
@@ -630,6 +667,14 @@ class CLITest(TemporaryTest):
         ), self.assertRaisesRegex(OnboardingConfigError, "do not match"):
             onboarding_cli._prompt_credential()
 
+    def test_setup_reprompts_for_an_unavailable_policy(self) -> None:
+        with patch.object(onboarding_cli, "_interactive", return_value=True), patch(
+            "builtins.input",
+            side_effect=[str(self.root / "missing-policy"), str(self.policy_path)],
+        ), contextlib.redirect_stderr(io.StringIO()):
+            selected = onboarding_cli._prompt_policy(self.policy_path)
+        self.assertEqual(selected, self.policy_path)
+
     def test_setup_writes_the_default_shape_without_a_credential_file(self) -> None:
         config_path = self.root / "accessible" / "onboarding.toml"
         state_dir = self.root / "setup-state"
@@ -650,6 +695,20 @@ class CLITest(TemporaryTest):
         self.assertTrue(json.loads(output.getvalue())["configuration_created"])
         config = load_onboarding_config(config_path)
         self.assertIsNone(config.credential_file)
+
+    def test_setup_repairs_an_existing_configuration(self) -> None:
+        output = io.StringIO()
+        with patch.object(onboarding_cli, "_interactive", return_value=True), patch(
+            "builtins.input", side_effect=["", "", "", ""]
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config", str(self.onboarding_path), "--setup"
+            ])
+        self.assertEqual(status, 0)
+        result = json.loads(output.getvalue())
+        self.assertFalse(result["configuration_created"])
+        self.assertTrue(result["configuration_updated"])
+        self.assertIsNone(load_onboarding_config(self.onboarding_path).credential_file)
 
     def test_failure_does_not_print_private_path_or_identity(self) -> None:
         output = io.StringIO()
