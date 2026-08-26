@@ -140,7 +140,8 @@ The public-safe [external viewer onboarding runbook](docs/external-viewer-onboar
 and interactive script create and verify one isolated Jellyfin/Jellyseerr
 identity. One-time `--setup` installs a stable private environment config;
 each run prompts for the viewer name and hidden password without persisting
-those credentials.
+those credentials. Optional `--bitwarden generate` and `--bitwarden save` modes
+store an exact verified vault item without exposing secrets in arguments.
 
 Remote-family access remains discovery-gated. Exact television platforms,
 client availability, VPN support, household network conditions, and Gruff's

@@ -37,6 +37,7 @@ class OnboardingConfig:
     jellyseerr_base_url: str
     jellyseerr_api_key_file: Path
     state_dir: Path
+    credential_storage: str = "memory"
 
 
 def _inside_git_worktree(path: Path) -> bool:
@@ -237,7 +238,11 @@ def _create_directory(path: Path, label: str, *, private: bool) -> None:
         raise OnboardingConfigError(f"cannot create {label}") from error
 
 
-def create_attempt_config(config: OnboardingConfig) -> OnboardingConfig:
+def create_attempt_config(
+    config: OnboardingConfig, *, credential_storage: str = "memory"
+) -> OnboardingConfig:
+    if credential_storage not in {"bitwarden", "memory"}:
+        raise OnboardingConfigError("credential storage result is invalid")
     try:
         attempt = Path(tempfile.mkdtemp(prefix="attempt-", dir=config.state_dir))
         attempt.chmod(0o700)
@@ -245,7 +250,9 @@ def create_attempt_config(config: OnboardingConfig) -> OnboardingConfig:
         raise OnboardingConfigError(
             "cannot create private onboarding attempt directory"
         ) from error
-    return replace(config, state_dir=attempt)
+    return replace(
+        config, state_dir=attempt, credential_storage=credential_storage
+    )
 
 
 def _write_onboarding_config(
