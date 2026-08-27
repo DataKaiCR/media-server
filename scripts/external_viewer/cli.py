@@ -26,6 +26,7 @@ from .config import (
     load_viewer_credential,
     viewer_credential,
 )
+from .presentation import HumanPresenter
 from .service import OnboardingError, apply, preflight
 
 
@@ -78,6 +79,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help=(
             "generate or save the viewer password in a Bitwarden vault"
         ),
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit structured JSON instead of terminal-oriented feedback",
     )
     return parser.parse_args(argv)
 
@@ -182,6 +188,7 @@ def _setup(path: Path) -> dict[str, object]:
         replace_existing=existed,
     )
     return {
+        "status": "setup_completed",
         "configuration_created": not existed,
         "configuration_updated": existed,
         "credentials_persisted": False,
@@ -203,12 +210,21 @@ def _prompt_credential() -> ViewerCredential:
 
 
 def _credential(
-    config: OnboardingConfig, bitwarden_mode: str | None
+    config: OnboardingConfig,
+    bitwarden_mode: str | None,
+    presenter: HumanPresenter | None = None,
 ) -> tuple[ViewerCredential, BitwardenVault | None]:
+    output = presenter or HumanPresenter(False)
     if bitwarden_mode is None:
         if config.credential_file is not None:
-            return load_viewer_credential(config.credential_file), None
-        return _prompt_credential(), None
+            credential = load_viewer_credential(config.credential_file)
+            output.note("Credential loaded from protected file")
+            return credential, None
+        with output.operation(
+            "Reading viewer credential", "Viewer credential prepared in memory"
+        ):
+            credential = _prompt_credential()
+        return credential, None
     if config.credential_file is not None:
         raise BitwardenError(
             "Bitwarden mode cannot be combined with credential_file"
@@ -216,19 +232,31 @@ def _credential(
     if not _interactive():
         raise BitwardenError("Bitwarden onboarding requires an interactive terminal")
     if bitwarden_mode == "save":
-        credential = _prompt_credential()
+        with output.operation(
+            "Reading viewer credential", "Viewer credential prepared in memory"
+        ):
+            credential = _prompt_credential()
     else:
         username = input("Viewer username: ")
         credential = viewer_credential(username, "A" * 12)
-    vault = BitwardenVault.open(interactive=True)
+    with output.operation("Preparing Bitwarden vault", "Bitwarden vault ready"):
+        vault = BitwardenVault.open(interactive=True)
     if bitwarden_mode == "generate":
-        credential = vault.generate_credential(credential.username)
-    vault.assert_available(credential.username)
+        with output.operation(
+            "Generating viewer password",
+            "Generated a 32-character password; held in memory",
+        ):
+            credential = vault.generate_credential(credential.username)
+    with output.operation(
+        "Checking for a matching Bitwarden item",
+        "No matching Bitwarden item exists",
+    ):
+        vault.assert_available(credential.username)
     return credential, vault
 
 
 def _confirm_apply() -> bool:
-    answer = input("Preflight passed. Apply this viewer now? [y/N]: ")
+    answer = input("Apply these changes now? [y/N]: ")
     return answer.strip().casefold() in {"y", "yes"}
 
 
@@ -236,24 +264,46 @@ def _apply_viewer(
     config: OnboardingConfig,
     policy: PolicyConfig,
     credential: ViewerCredential,
-    clients: tuple[ExternalJellyfinClient, JellyseerrClient],
-    vault: BitwardenVault | None,
+    resources: tuple[
+        ExternalJellyfinClient, JellyseerrClient, BitwardenVault | None
+    ],
+    presenter: HumanPresenter,
 ) -> dict[str, object]:
-    jellyfin, jellyseerr = clients
-    preflight(policy, credential, jellyfin, jellyseerr)
+    jellyfin, jellyseerr, vault = resources
+    presenter.configure_apply(bitwarden=vault is not None)
+    presenter.apply_phase("safety", "start")
+    try:
+        baseline = preflight(policy, credential, jellyfin, jellyseerr)
+    except Exception:
+        presenter.apply_phase("safety", "failed")
+        raise
+    presenter.apply_phase("safety", "done")
+    presenter.record_baseline(baseline)
     storage = "memory"
     if vault is not None:
-        vault.store(credential)
+        presenter.apply_phase("vault", "start")
+        try:
+            vault.store(credential)
+        except BitwardenError as error:
+            presenter.apply_phase("vault", "failed")
+            raise BitwardenError(
+                "Bitwarden credential storage failed; inspect the vault before retrying"
+            ) from error
+        presenter.apply_phase("vault", "done")
         storage = "bitwarden"
     try:
+        attempt = create_attempt_config(
+            config, credential_storage=storage
+        )
         return apply(
-            create_attempt_config(config, credential_storage=storage),
+            attempt,
             policy,
             credential,
             jellyfin,
             jellyseerr,
+            progress=presenter.apply_phase,
         )
-    except OnboardingError as error:
+    except (OnboardingConfigError, OnboardingError) as error:
         if vault is not None:
             raise OnboardingError(
                 "onboarding failed; Bitwarden credential retained for recovery"
@@ -261,45 +311,88 @@ def _apply_viewer(
         raise
 
 
-def _operate(config: OnboardingConfig, args: argparse.Namespace) -> None:
-    credential, vault = _credential(config, args.bitwarden)
+def _human_output(args: argparse.Namespace) -> bool:
+    return not args.json and sys.stdout.isatty()
+
+
+def _json_result(result: dict[str, object]) -> None:
+    print(json.dumps(result, sort_keys=True), flush=True)
+
+
+def _credential_mode(
+    config: OnboardingConfig, bitwarden_mode: str | None
+) -> str:
+    if bitwarden_mode is not None:
+        return bitwarden_mode
+    return "file" if config.credential_file is not None else "memory"
+
+
+def _operate(
+    config: OnboardingConfig,
+    args: argparse.Namespace,
+    presenter: HumanPresenter,
+) -> None:
+    presenter.introduction(_credential_mode(config, args.bitwarden))
+    credential, vault = _credential(config, args.bitwarden, presenter)
     policy = load_config(config.policy_config_file)
     jellyfin = ExternalJellyfinClient(policy.base_url, policy.api_key_file)
     jellyseerr = JellyseerrClient(
         config.jellyseerr_base_url, config.jellyseerr_api_key_file
     )
-    clients = (jellyfin, jellyseerr)
+    resources = (jellyfin, jellyseerr, vault)
     if args.apply:
         result = _apply_viewer(
-            config, policy, credential, clients, vault
+            config, policy, credential, resources, presenter
         )
-        print(json.dumps(result, sort_keys=True))
+        if presenter.enabled:
+            presenter.complete(result)
+        else:
+            _json_result(result)
         return
-    result = preflight(policy, credential, jellyfin, jellyseerr)
-    print(json.dumps(result, sort_keys=True), flush=True)
-    if _interactive() and _confirm_apply():
-        result = _apply_viewer(
-            config, policy, credential, clients, vault
-        )
-        print(json.dumps(result, sort_keys=True))
+    with presenter.operation("Running read-only preflight", "Preflight passed"):
+        result = preflight(policy, credential, jellyfin, jellyseerr)
+    if presenter.enabled:
+        presenter.show_preflight(result, bitwarden_pending=vault is not None)
+    else:
+        _json_result(result)
+    if _interactive():
+        presenter.show_plan(bitwarden=vault is not None)
+        if _confirm_apply():
+            result = _apply_viewer(
+                config, policy, credential, resources, presenter
+            )
+            if presenter.enabled:
+                presenter.complete(result)
+            else:
+                _json_result(result)
+        else:
+            presenter.cancelled(bitwarden=vault is not None)
+    else:
+        presenter.preflight_only()
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    presenter = HumanPresenter(_human_output(args))
     try:
         config_path = _config_path(args.config, setup=args.setup)
         if args.setup:
             if args.bitwarden is not None:
                 raise BitwardenError("Bitwarden mode cannot be used during setup")
-            print(json.dumps(_setup(config_path), sort_keys=True))
+            result = _setup(config_path)
+            if presenter.enabled:
+                presenter.setup_complete(result)
+            else:
+                _json_result(result)
             return 0
         if not config_path.exists():
             if not _interactive():
                 raise OnboardingConfigError(
                     "onboarding configuration is missing; run with --setup"
                 )
-            _setup(config_path)
-        _operate(load_onboarding_config(config_path), args)
+            setup_result = _setup(config_path)
+            presenter.setup_complete(setup_result)
+        _operate(load_onboarding_config(config_path), args, presenter)
         return 0
     except (
         ApplyError,

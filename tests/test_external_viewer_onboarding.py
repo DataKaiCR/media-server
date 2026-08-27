@@ -598,9 +598,107 @@ class CLITest(TemporaryTest):
         self.assertEqual(status, 0)
         self.assertEqual(errors.getvalue(), "")
         result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "preflight_passed")
         self.assertTrue(result["ready"])
         self.assertNotIn("private-new", output.getvalue())
         self.assertNotIn(NEW_ID, output.getvalue())
+
+    def test_terminal_apply_output_is_human_readable_and_aggregate(self) -> None:
+        jellyfin, jellyseerr = self.fake_clients()
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_human_output", return_value=True
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config", str(self.onboarding_path), "--apply"
+            ])
+        rendered = output.getvalue()
+        self.assertEqual(status, 0)
+        self.assertIn("External viewer onboarding", rendered)
+        self.assertIn("[1/5] Revalidating safety conditions", rendered)
+        self.assertIn("✓ Onboarding completed", rendered)
+        self.assertIn("External viewers: 1 → 2", rendered)
+        self.assertIn("Jellyseerr: login verified; request-only", rendered)
+        self.assertNotIn("{", rendered)
+        self.assertNotIn("private-new", rendered)
+        self.assertNotIn(self.credential().password, rendered)
+        self.assertNotIn(NEW_ID, rendered)
+
+    def test_terminal_failure_reports_verified_rollback_without_identity(self) -> None:
+        jellyfin = FakeJellyfin(
+            self.compliant_users(), self.credential().password
+        )
+        jellyseerr = FakeJellyseerr(jellyfin, fail_auth=True)
+        output = io.StringIO()
+        errors = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_human_output", return_value=True
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            status = onboarding_cli.main([
+                "--config", str(self.onboarding_path), "--apply"
+            ])
+        rendered = output.getvalue()
+        self.assertEqual(status, 1)
+        self.assertIn("Importing and verifying Jellyseerr account... failed", rendered)
+        self.assertIn("[rollback] Restoring and verifying prior state... done", rendered)
+        self.assertIn("was rolled back", errors.getvalue())
+        self.assertNotIn("private-new", rendered + errors.getvalue())
+        self.assertNotIn(self.credential().password, rendered + errors.getvalue())
+        self.assertNotIn(NEW_ID, rendered + errors.getvalue())
+
+    def test_terminal_cancellation_explains_bitwarden_was_not_written(self) -> None:
+        document = self.onboarding_path.read_text(encoding="utf-8")
+        self.onboarding_path.write_text(
+            "\n".join(
+                line for line in document.splitlines()
+                if not line.startswith("credential_file =")
+            ) + "\n",
+            encoding="utf-8",
+        )
+        jellyfin, jellyseerr = self.fake_clients()
+        vault = FakeVault(self.credential().password)
+        output = io.StringIO()
+        with patch.object(
+            onboarding_cli, "_human_output", return_value=True
+        ), patch.object(
+            onboarding_cli, "_interactive", return_value=True
+        ), patch("builtins.input", return_value="private-new"), patch.object(
+            onboarding_cli, "_confirm_apply", return_value=False
+        ), patch.object(
+            onboarding_cli.BitwardenVault, "open", return_value=vault
+        ), patch.object(
+            onboarding_cli, "ExternalJellyfinClient", return_value=jellyfin
+        ), patch.object(
+            onboarding_cli, "JellyseerrClient", return_value=jellyseerr
+        ), contextlib.redirect_stdout(output):
+            status = onboarding_cli.main([
+                "--config",
+                str(self.onboarding_path),
+                "--bitwarden",
+                "generate",
+            ])
+        rendered = output.getvalue()
+        self.assertEqual(status, 0)
+        self.assertEqual(vault.stored, [])
+        self.assertIn("Generated a 32-character password", rendered)
+        self.assertIn("Planned changes:", rendered)
+        self.assertIn("No changes made.", rendered)
+        self.assertIn("credential was not stored in Bitwarden", rendered)
+        self.assertNotIn("private-new", rendered)
+        self.assertNotIn(self.credential().password, rendered)
+
+    def test_json_flag_overrides_terminal_presentation(self) -> None:
+        args = onboarding_cli.parse_args(["--json"])
+        with patch.object(onboarding_cli.sys.stdout, "isatty", return_value=True):
+            self.assertFalse(onboarding_cli._human_output(args))
 
     def test_prompts_for_each_viewer_without_persisting_credentials(self) -> None:
         document = self.onboarding_path.read_text(encoding="utf-8")
@@ -772,6 +870,10 @@ class CLITest(TemporaryTest):
         self.assertEqual(status, 0)
         prompt.assert_called_once_with()
         results = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(
+            [row.get("status") for row in results],
+            ["preflight_passed", "completed"],
+        )
         self.assertEqual([row.get("ready") for row in results], [True, False])
         self.assertTrue(results[1]["applied"])
 
@@ -878,6 +980,7 @@ class ServiceTest(TemporaryTest):
             self.policy(), self.credential(), jellyfin, jellyseerr
         )
         rendered = json.dumps(result, sort_keys=True)
+        self.assertEqual(result["status"], "preflight_passed")
         self.assertTrue(result["ready"])
         self.assertEqual(result["configured_external_count"], 1)
         self.assertNotIn("private-existing", rendered)
@@ -888,10 +991,27 @@ class ServiceTest(TemporaryTest):
 
     def test_apply_is_backup_first_verified_and_request_only(self) -> None:
         jellyfin, jellyseerr = self.clients()
+        events: list[tuple[str, str]] = []
         result = apply(
-            self.onboarding(), self.policy(), self.credential(), jellyfin, jellyseerr
+            self.onboarding(),
+            self.policy(),
+            self.credential(),
+            jellyfin,
+            jellyseerr,
+            progress=lambda phase, status: events.append((phase, status)),
         )
+        self.assertEqual(result["status"], "completed")
         self.assertTrue(result["applied"])
+        self.assertEqual(events, [
+            ("rollback_state", "start"),
+            ("rollback_state", "done"),
+            ("jellyfin", "start"),
+            ("jellyfin", "done"),
+            ("jellyseerr", "start"),
+            ("jellyseerr", "done"),
+            ("receipt", "start"),
+            ("receipt", "done"),
+        ])
         self.assertEqual(result["credential_storage"], "memory")
         self.assertFalse(result["credentials_persisted"])
         self.assertFalse(result["account_names_persisted"])
@@ -917,6 +1037,24 @@ class ServiceTest(TemporaryTest):
             (self.root / "policy-backups").stat().st_mode & 0o777, 0o700
         )
 
+    def test_progress_renderer_failure_cannot_change_transaction(self) -> None:
+        jellyfin, jellyseerr = self.clients()
+
+        def broken_progress(_phase: str, _status: str) -> None:
+            raise RuntimeError("presentation unavailable")
+
+        result = apply(
+            self.onboarding(),
+            self.policy(),
+            self.credential(),
+            jellyfin,
+            jellyseerr,
+            progress=broken_progress,
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(jellyfin.rows), 3)
+        self.assertEqual(len(jellyseerr.rows), 3)
+
     def test_toml_escapes_private_username(self) -> None:
         credential = {"username": 'private"viewer', "password": "A" * 24}
         self.credential_path.write_text(json.dumps(credential), encoding="utf-8")
@@ -930,10 +1068,18 @@ class ServiceTest(TemporaryTest):
     def test_acknowledged_import_failure_rolls_back_both_applications(self) -> None:
         jellyfin, jellyseerr = self.clients(fail_auth=True)
         original_policy = self.policy_path.read_bytes()
+        events: list[tuple[str, str]] = []
         with self.assertRaisesRegex(OnboardingError, "rolled back"):
             apply(
-                self.onboarding(), self.policy(), self.credential(), jellyfin, jellyseerr
+                self.onboarding(),
+                self.policy(),
+                self.credential(),
+                jellyfin,
+                jellyseerr,
+                progress=lambda phase, status: events.append((phase, status)),
             )
+        self.assertIn(("jellyseerr", "failed"), events)
+        self.assertEqual(events[-2:], [("rollback", "start"), ("rollback", "done")])
         self.assertEqual(len(jellyfin.rows), 2)
         self.assertEqual(len(jellyseerr.rows), 2)
         self.assertEqual(self.policy_path.read_bytes(), original_policy)
