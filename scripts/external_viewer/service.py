@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Protocol
+from typing import Callable, Protocol
 
 from jellyfin_policy.config import PolicyConfig, UserRule, load_config
 from jellyfin_policy.policy import build_plan
@@ -24,6 +24,21 @@ _RECEIPT = "external-viewer-onboarding-receipt.json"
 
 class OnboardingError(RuntimeError):
     """External-viewer onboarding could not complete safely."""
+
+
+ProgressCallback = Callable[[str, str], None]
+
+
+def _emit(
+    progress: ProgressCallback | None, phase: str, status: str
+) -> None:
+    if progress is None:
+        return
+    try:
+        progress(phase, status)
+    except Exception:
+        # Presentation must never alter transactional behavior.
+        pass
 
 
 class JellyfinOperations(Protocol):
@@ -191,6 +206,7 @@ def _baseline(
     ):
         raise OnboardingError("external Jellyseerr identity boundary has drift")
     return {
+        "status": "preflight_passed",
         "ready": True,
         "apply_required": True,
         "existing_policy_compliant": True,
@@ -357,6 +373,7 @@ def _configure_jellyseerr(context: _ApplyContext, state: _MutationState) -> None
 def _publish_result(context: _ApplyContext) -> dict[str, object]:
     result = {
         **context.baseline,
+        "status": "completed",
         "ready": False,
         "apply_required": False,
         "applied": True,
@@ -428,20 +445,44 @@ def apply(
     credential: ViewerCredential,
     jellyfin: JellyfinOperations,
     jellyseerr: JellyseerrOperations,
+    *,
+    progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
     if config.credential_storage not in {"bitwarden", "memory"}:
         raise OnboardingError("credential storage result is invalid")
-    context = _prepare_apply(config, policy, credential, jellyfin, jellyseerr)
-    state = _MutationState()
+    _emit(progress, "rollback_state", "start")
     try:
+        context = _prepare_apply(
+            config, policy, credential, jellyfin, jellyseerr
+        )
+    except Exception:
+        _emit(progress, "rollback_state", "failed")
+        raise
+    _emit(progress, "rollback_state", "done")
+    state = _MutationState()
+    phase = "jellyfin"
+    try:
+        _emit(progress, phase, "start")
         _configure_jellyfin(context, state)
+        _emit(progress, phase, "done")
+        phase = "jellyseerr"
+        _emit(progress, phase, "start")
         _configure_jellyseerr(context, state)
-        return _publish_result(context)
+        _emit(progress, phase, "done")
+        phase = "receipt"
+        _emit(progress, phase, "start")
+        result = _publish_result(context)
+        _emit(progress, phase, "done")
+        return result
     except Exception as error:
+        _emit(progress, phase, "failed")
+        _emit(progress, "rollback", "start")
         try:
             _rollback(context, state)
         except OnboardingError:
+            _emit(progress, "rollback", "failed")
             raise
+        _emit(progress, "rollback", "done")
         raise OnboardingError(
             "external viewer onboarding failed and was rolled back"
         ) from error

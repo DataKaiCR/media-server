@@ -141,7 +141,9 @@ and interactive script create and verify one isolated Jellyfin/Jellyseerr
 identity. One-time `--setup` installs a stable private environment config;
 each run prompts for the viewer name and hidden password without persisting
 those credentials. Optional `--bitwarden generate` and `--bitwarden save` modes
-store an exact verified vault item without exposing secrets in arguments.
+store an exact verified vault item without exposing secrets in arguments. A
+terminal shows aggregate phase progress and timings; `--json` retains structured
+output for automation.
 
 Remote-family access remains discovery-gated. Exact television platforms,
 client availability, VPN support, household network conditions, and Gruff's

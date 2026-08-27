@@ -152,10 +152,12 @@ Start the loopback relays, then run:
 
 The script asks for the exact viewer username, then prompts invisibly for the
 password and confirmation. It retains both only in memory. Preflight performs
-API reads but creates no account and writes no receipt. A successful result
-reports `ready: true`, then asks whether to apply this viewer now. Answer `n` or
-press Enter to stop after the dry run; answer `y` to continue with the same
-in-memory credential.
+API reads but creates no account and writes no receipt. On a terminal, a
+successful preflight displays an interpreted aggregate summary and the exact
+planned classes of change before asking whether to apply. Answer `n` or press
+Enter to stop after the dry run; answer `y` to continue with the same in-memory
+credential. Cancellation explicitly confirms that no application change or
+Bitwarden write occurred.
 
 The tool fails closed when the target already exists, a current account is
 missing from either application, a public Jellyfin profile exists, an existing
@@ -175,6 +177,27 @@ application immediately while still running the same fail-closed checks, use:
 The viewer username and hidden password are never command-line arguments or a
 persisted credential file. `--apply` includes the same fail-closed preflight
 before any mutation.
+
+## Output modes
+
+Interactive terminals receive line-based, aggregate progress by default. Each
+bounded phase reports completion and elapsed time so Bitwarden synchronization
+or application checks do not appear stalled. The final summary interprets
+Jellyseerr permission `32` as request-only and reports completion instead of the
+internal legacy `ready` flag. Progress never contains the viewer name, account
+or vault IDs, private paths, credentials, tokens, or raw API responses.
+
+Use structured output explicitly when integrating with another tool:
+
+```bash
+./scripts/external-viewer-onboard.py --bitwarden generate --json
+```
+
+Output also switches to JSON automatically when standard output is redirected.
+JSON records include `status: "preflight_passed"` or `status: "completed"`;
+a guided apply emits one newline-delimited record for each state. Prompts remain
+on the controlling terminal, and `--json` never moves credentials into command
+arguments.
 
 ## Optional Bitwarden storage
 
@@ -209,8 +232,10 @@ the existing memory-only behavior is unchanged.
 
 Success reports one policy account updated, Jellyfin authentication passing,
 Movies/TV as the only effective collection types, zero public profiles, and
-Jellyseerr permission `32`. Each apply automatically creates a fresh private
-attempt subdirectory containing:
+request-only Jellyseerr access. During apply, fixed phase labels show safety
+revalidation, vault storage when selected, rollback-state creation, both
+application operations, and private receipt publication. Each apply creates a
+fresh private attempt subdirectory containing:
 
 - `jellyfin-policy.pre.toml`, the mode-`0600` pre-change policy authority; and
 - `external-viewer-onboarding-receipt.json`, a mode-`0600` aggregate receipt.
