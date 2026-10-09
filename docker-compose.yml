@@ -255,7 +255,7 @@ services:
   # storage keeps household and external sessions separate.
   cine-pelencho-web:
     <<: *common
-    image: localhost/cine-pelencho-web@sha256:f451ec37b5025b36278114ee1de6081b08eb05d6fe96d4b1ade3de874eeec3fe
+    image: localhost/cine-pelencho-web@sha256:4a8e10b1bf7a7055474d5b19153891088d4f9311db13d11f0530ff6809918ed6
     container_name: cine-pelencho-web
     networks: [media]
     expose: ["8080"]
